@@ -15,7 +15,7 @@ from services.data_fetcher import (
     get_whisper_data,
     get_behavior_data,
     get_emotion_data,
-    get_spot_feature_metadata
+    get_device_timezone
 )
 from services.subject_fetcher import get_subject_info
 from services.prompt_generator import generate_spot_prompt
@@ -35,8 +35,7 @@ class SpotAggregatorResponse(BaseModel):
     status: str
     device_id: str
     recorded_at: str
-    local_date: Optional[str] = None
-    local_time: Optional[str] = None
+    timezone: Optional[str] = None
     aggregated_prompt: Optional[str] = None
     context_data: Optional[Dict[str, Any]] = None
     message: Optional[str] = None
@@ -59,21 +58,17 @@ async def aggregate_spot(request: SpotAggregatorRequest):
     try:
         supabase_client = get_supabase_client()
 
-        # 1. Get metadata from spot_features (local_date, local_time)
-        metadata = await get_spot_feature_metadata(
+        # 1. Get device timezone
+        timezone_str = await get_device_timezone(
             supabase_client,
-            request.device_id,
-            request.recorded_at
+            request.device_id
         )
 
-        if not metadata:
+        if not timezone_str:
             raise HTTPException(
                 status_code=404,
-                detail=f"No spot_features found for device_id={request.device_id}, recorded_at={request.recorded_at}"
+                detail=f"No timezone found for device_id={request.device_id}"
             )
-
-        local_date = metadata.get('local_date')
-        local_time = metadata.get('local_time')
 
         # 2. Fetch analysis results
         transcription = await get_whisper_data(
@@ -103,8 +98,7 @@ async def aggregate_spot(request: SpotAggregatorRequest):
             behavior_data=behavior_data,
             emotion_data=emotion_data,
             recorded_at=request.recorded_at,
-            local_date=local_date,
-            local_time=local_time,
+            timezone_str=timezone_str,
             subject_info=subject_info
         )
 
@@ -122,8 +116,6 @@ async def aggregate_spot(request: SpotAggregatorRequest):
         insert_result = supabase_client.table('spot_aggregators').upsert({
             'device_id': request.device_id,
             'recorded_at': request.recorded_at,
-            'local_date': local_date,
-            'local_time': local_time,
             'aggregated_prompt': aggregated_prompt,
             'context_data': context_data
         }).execute()
@@ -138,8 +130,7 @@ async def aggregate_spot(request: SpotAggregatorRequest):
             status="success",
             device_id=request.device_id,
             recorded_at=request.recorded_at,
-            local_date=local_date,
-            local_time=local_time,
+            timezone=timezone_str,
             aggregated_prompt=aggregated_prompt,
             context_data=context_data,
             message="Spot aggregation completed successfully"

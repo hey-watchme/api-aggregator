@@ -106,28 +106,25 @@ async def get_emotion_data(supabase_client, device_id: str, recorded_at: str) ->
         return None
 
 
-async def get_spot_feature_metadata(supabase_client, device_id: str, recorded_at: str) -> Optional[dict]:
+async def get_device_timezone(supabase_client, device_id: str) -> Optional[str]:
     """
-    Fetch local_date and local_time from spot_features
+    Fetch timezone from devices table
 
     Args:
         supabase_client: Supabase client instance
         device_id: Device ID
-        recorded_at: Timestamp in ISO 8601 format
 
     Returns:
-        {'local_date': 'YYYY-MM-DD', 'local_time': 'HH:MM:SS'} or None
+        Timezone string (e.g., "Asia/Tokyo") or None
     """
     try:
-        result = supabase_client.table('spot_features').select('local_date, local_time').eq(
+        result = supabase_client.table('devices').select('timezone').eq(
             'device_id', device_id
-        ).eq(
-            'recorded_at', recorded_at
         ).execute()
 
         if result.data and len(result.data) > 0:
-            return result.data[0]
+            return result.data[0].get('timezone')
         return None
     except Exception as e:
-        print(f"Error fetching spot feature metadata: {e}")
+        print(f"Error fetching device timezone: {e}")
         return None

@@ -5,12 +5,13 @@ Generate LLM analysis prompts from aggregated data
 
 Key Differences from timeblock processing:
 - Uses recorded_at (ISO 8601 timestamp) instead of time_block
-- Uses local_time for time period calculation (morning/afternoon/evening/night)
+- Uses device timezone to convert UTC to local time for time period calculation
 - Reuses prompt format from Vibe Aggregator with spot-specific adaptations
 """
 
 from datetime import datetime, time as time_type
 from typing import Optional, Dict, List
+import pytz
 from services.context_builder import get_season, get_weekday_info, get_holiday_context, get_time_period
 from services.subject_fetcher import generate_age_context
 
@@ -20,8 +21,7 @@ def generate_spot_prompt(
     behavior_data: Optional[list],
     emotion_data: Optional[list],
     recorded_at: str,
-    local_date: str,
-    local_time: str,
+    timezone_str: str,
     subject_info: Optional[Dict] = None
 ) -> str:
     """
@@ -32,8 +32,7 @@ def generate_spot_prompt(
         behavior_data: Behavior analysis results (YAMNet)
         emotion_data: Emotion timeline data (Kushinada/OpenSMILE)
         recorded_at: UTC timestamp in ISO 8601 format
-        local_date: Local date (YYYY-MM-DD)
-        local_time: Local time (HH:MM:SS)
+        timezone_str: Device timezone (e.g., "Asia/Tokyo")
         subject_info: Subject information
 
     Returns:
@@ -41,10 +40,31 @@ def generate_spot_prompt(
     """
     prompt_parts = []
 
-    # Extract hour and minute from local_time
-    time_obj = datetime.strptime(local_time, "%H:%M:%S").time()
-    hour = time_obj.hour
-    minute = time_obj.minute
+    # Convert UTC to local time using device timezone
+    try:
+        # Parse ISO 8601 timestamp
+        recorded_at_dt = datetime.fromisoformat(recorded_at.replace('Z', '+00:00'))
+
+        # Get timezone object
+        timezone = pytz.timezone(timezone_str)
+
+        # Convert to local time
+        local_time_dt = recorded_at_dt.astimezone(timezone)
+
+        # Extract components
+        hour = local_time_dt.hour
+        minute = local_time_dt.minute
+        local_date = local_time_dt.strftime('%Y-%m-%d')
+        local_time = local_time_dt.strftime('%H:%M:%S')
+
+    except Exception as e:
+        print(f"Error converting timezone: {e}")
+        # Fallback to UTC
+        recorded_at_dt = datetime.fromisoformat(recorded_at.replace('Z', '+00:00'))
+        hour = recorded_at_dt.hour
+        minute = recorded_at_dt.minute
+        local_date = recorded_at_dt.strftime('%Y-%m-%d')
+        local_time = recorded_at_dt.strftime('%H:%M:%S')
 
     # Get time period
     time_period = get_time_period(hour)
