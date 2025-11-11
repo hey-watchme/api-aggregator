@@ -89,19 +89,56 @@ jobs:
     needs: deploy
 
     steps:
-    # ステップ1: SSHエージェントのセットアップ
+    # ステップ1: コードのチェックアウト
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    # ステップ2: SSHエージェントのセットアップ
     - name: Setup SSH Agent
       uses: webfactory/ssh-agent@v0.9.0
       with:
         ssh-private-key: ${{ secrets.EC2_SSH_PRIVATE_KEY }}
 
-    # ステップ2: Known Hostsの追加（セキュリティ向上）
+    # ステップ3: Known Hostsの追加（セキュリティ向上）
     - name: Add EC2 to known hosts
       run: |
         mkdir -p ~/.ssh
         ssh-keyscan -H ${{ secrets.EC2_HOST }} >> ~/.ssh/known_hosts
 
-    # ステップ3: EC2にデプロイ
+    # ステップ4: EC2にディレクトリ作成（べき等性確保）
+    - name: Create application directory on EC2 if not exists
+      env:
+        EC2_HOST: ${{ secrets.EC2_HOST }}
+        EC2_USER: ${{ secrets.EC2_USER }}
+      run: |
+        ssh ${EC2_USER}@${EC2_HOST} "mkdir -p /home/ubuntu/aggregator"
+
+    # ステップ5: ファイルをEC2にコピー
+    - name: Copy deployment files to EC2
+      env:
+        EC2_HOST: ${{ secrets.EC2_HOST }}
+        EC2_USER: ${{ secrets.EC2_USER }}
+      run: |
+        scp docker-compose.prod.yml ${EC2_USER}@${EC2_HOST}:/home/ubuntu/aggregator/
+        scp run-prod.sh ${EC2_USER}@${EC2_HOST}:/home/ubuntu/aggregator/
+        ssh ${EC2_USER}@${EC2_HOST} "chmod +x /home/ubuntu/aggregator/run-prod.sh"
+
+    # ステップ6: 環境変数ファイル作成
+    - name: Create/Update .env file on EC2
+      env:
+        EC2_HOST: ${{ secrets.EC2_HOST }}
+        EC2_USER: ${{ secrets.EC2_USER }}
+        SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+        SUPABASE_KEY: ${{ secrets.SUPABASE_KEY }}
+      run: |
+        ssh ${EC2_USER}@${EC2_HOST} << ENDSSH
+          cd /home/ubuntu/aggregator
+          echo "SUPABASE_URL=${SUPABASE_URL}" > .env
+          echo "SUPABASE_KEY=${SUPABASE_KEY}" >> .env
+          echo "EC2_BASE_URL=local" >> .env
+        ENDSSH
+
+    # ステップ7: EC2にデプロイ
     - name: Deploy to EC2 instance
       env:
         EC2_HOST: ${{ secrets.EC2_HOST }}
