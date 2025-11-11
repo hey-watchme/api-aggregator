@@ -1,44 +1,44 @@
 """
 Subject Fetcher Service
 ========================
-³,şaÅ1’Ö—Y‹µüÓ¹
-âXnVibe AggregatorK‰A(]n~~(ïı	
+Fetch observed subject information
+Reused from Vibe Aggregator codebase
 """
 
 from typing import Optional, Dict
 
 
 def generate_age_context(subject_info: Optional[Dict]) -> str:
-    """³,şanú,Å1n’Ğ›zdQ’’d	"""
+    """Generate age and gender context string from subject information"""
     if not subject_info:
-        return "³,şaÅ1"
+        return "Subject information unavailable"
 
     age = subject_info.get('age')
-    gender = subject_info.get('gender', '')
+    gender = subject_info.get('gender', '')
     notes = subject_info.get('notes', '')
 
     context_parts = []
 
-    # ú,Å1n
+    # Age and gender context
     if age is not None:
         context_parts.append(f"{age}s {gender}")
     else:
-        context_parts.append(f"tb {gender}")
+        context_parts.append(f"Unknown age {gender}")
 
-    # %n™Å1’Í–
+    # Additional notes
     if notes:
-        context_parts.append(f"™{notes}")
+        context_parts.append(f"Notes: {notes}")
 
     return " / ".join(context_parts)
 
 
 async def get_subject_info(supabase_client, device_id: str) -> Optional[Dict]:
     """
-    device_idK‰³,şaÅ1’Ö—
-    devices ’ subjects ÆüÖë’PWfÅ1’Ö—
+    Fetch subject information from device_id
+    Retrieve information by joining devices and subjects tables
     """
     try:
-        # ~Z devices ÆüÖëK‰ subject_id ’Ö—
+        # First, get subject_id from devices table
         device_result = supabase_client.table('devices').select('subject_id').eq(
             'device_id', device_id
         ).execute()
@@ -52,7 +52,7 @@ async def get_subject_info(supabase_client, device_id: str) -> Optional[Dict]:
             print(f"No subject_id for device: {device_id}")
             return None
 
-        # subjects ÆüÖëK‰Å1’Ö—
+        # Then, get subject information from subjects table
         subject_result = supabase_client.table('subjects').select(
             'subject_id', 'name', 'age', 'gender', 'notes'
         ).eq(

@@ -1,11 +1,11 @@
 """
 Data Fetcher Service
 =====================
-spot_features∆¸÷ÎKây¥Ω˙«¸øí÷óYãµ¸”π
+Fetch transcription, behavior, and emotion data from spot_features table
 
-ÕÅj	Ùπ:
-- ∆¸÷Î: audio_features í spot_features
-- ;≠¸: (device_id, date, time_block) í (device_id, recorded_at)
+Key Differences from timeblock processing:
+- Table: spot_features (not audio_features)
+- Query key: (device_id, recorded_at) instead of (device_id, date, time_block)
 """
 
 from typing import Optional
@@ -13,15 +13,15 @@ from typing import Optional
 
 async def get_whisper_data(supabase_client, device_id: str, recorded_at: str) -> Optional[str]:
     """
-    spot_features∆¸÷ÎKâyönø§‡πøÛ◊n»ÈÛπØÍ◊»í÷ó
+    Fetch Whisper transcription result from spot_features
 
     Args:
-        supabase_client: SupabaseØÈ§¢Û»
-        device_id: «–§πID
-        recorded_at: 2ÛÂBISO 8601b: "2025-11-10T14:30:00+09:00"	
+        supabase_client: Supabase client instance
+        device_id: Device ID
+        recorded_at: Timestamp in ISO 8601 format (e.g., "2025-11-10T14:30:00+09:00")
 
     Returns:
-        áWwSW∆≠π»~_oNone
+        Transcription text or None
     """
     try:
         result = supabase_client.table('spot_features').select('vibe_transcriber_result').eq(
@@ -40,16 +40,16 @@ async def get_whisper_data(supabase_client, device_id: str, recorded_at: str) ->
 
 async def get_behavior_data(supabase_client, device_id: str, recorded_at: str) -> Optional[list]:
     """
-    spot_features∆¸÷ÎKâyönø§‡πøÛ◊nL’ê«¸øí÷ó
-    behavior_extractor_result´È‡KâYAMNetnÛˇ§ŸÛ»˙Púí÷ó
+    Fetch behavior analysis result from spot_features
+    Extract 'events' array from behavior_extractor_result JSONB column
 
     Args:
-        supabase_client: SupabaseØÈ§¢Û»
-        device_id: «–§πID
-        recorded_at: 2ÛÂBISO 8601b	
+        supabase_client: Supabase client instance
+        device_id: Device ID
+        recorded_at: Timestamp in ISO 8601 format
 
     Returns:
-        Ûˇ§ŸÛ»nÍπ»~_oNone
+        List of behavior events or None
     """
     try:
         result = supabase_client.table('spot_features').select('behavior_extractor_result').eq(
@@ -61,8 +61,8 @@ async def get_behavior_data(supabase_client, device_id: str, recorded_at: str) -
         if result.data and len(result.data) > 0:
             extractor_result = result.data[0].get('behavior_extractor_result')
             if extractor_result:
-                # JSONBãjngÙ•û¯hWfqHã
-                # 'events'≠¸LX(Yã4o÷ó
+                # JSONB column may contain nested structure
+                # Extract 'events' array
                 if isinstance(extractor_result, dict):
                     return extractor_result.get('events', [])
                 return []
@@ -74,16 +74,16 @@ async def get_behavior_data(supabase_client, device_id: str, recorded_at: str) -
 
 async def get_emotion_data(supabase_client, device_id: str, recorded_at: str) -> Optional[list]:
     """
-    spot_features∆¸÷ÎKâyönø§‡πøÛ◊n≈ê«¸øí÷ó
-    emotion_extractor_result´È‡KâKushinadan≈y¥«¸øí÷ó
+    Fetch emotion analysis result from spot_features
+    Extract Kushinada emotion timeline from emotion_extractor_result
 
     Args:
-        supabase_client: SupabaseØÈ§¢Û»
-        device_id: «–§πID
-        recorded_at: 2ÛÂBISO 8601b	
+        supabase_client: Supabase client instance
+        device_id: Device ID
+        recorded_at: Timestamp in ISO 8601 format
 
     Returns:
-        ≈y¥nÍπ»~_oNone
+        Emotion timeline data or None
     """
     try:
         result = supabase_client.table('spot_features').select('emotion_extractor_result').eq(
@@ -95,8 +95,8 @@ async def get_emotion_data(supabase_client, device_id: str, recorded_at: str) ->
         if result.data and len(result.data) > 0:
             extractor_result = result.data[0].get('emotion_extractor_result')
             if extractor_result:
-                # JSONBãjngÙ•û¯hWfqHã
-                # 'selected_features_timeline'≠¸LX(Yã4o÷ó
+                # JSONB column may contain nested structure
+                # Extract 'selected_features_timeline' array
                 if isinstance(extractor_result, dict):
                     return extractor_result.get('selected_features_timeline', [])
                 return []
@@ -108,15 +108,15 @@ async def get_emotion_data(supabase_client, device_id: str, recorded_at: str) ->
 
 async def get_spot_feature_metadata(supabase_client, device_id: str, recorded_at: str) -> Optional[dict]:
     """
-    spot_features∆¸÷ÎKâlocal_datehlocal_timeí÷ó
+    Fetch local_date and local_time from spot_features
 
     Args:
-        supabase_client: SupabaseØÈ§¢Û»
-        device_id: «–§πID
-        recorded_at: 2ÛÂBISO 8601b	
+        supabase_client: Supabase client instance
+        device_id: Device ID
+        recorded_at: Timestamp in ISO 8601 format
 
     Returns:
-        {'local_date': 'YYYY-MM-DD', 'local_time': 'HH:MM:SS'}~_oNone
+        {'local_date': 'YYYY-MM-DD', 'local_time': 'HH:MM:SS'} or None
     """
     try:
         result = supabase_client.table('spot_features').select('local_date, local_time').eq(

@@ -1,7 +1,7 @@
 """
 Supabase Client Utility
 ========================
-Supabase¥š’¡Y‹æüÆ£êÆ£â¸åüë
+Manages Supabase client connection with singleton pattern
 """
 
 import os
@@ -9,19 +9,19 @@ from supabase import create_client, Client
 from typing import Optional
 
 
-# °íüÐë	pEö	
+# Global singleton client instance
 _supabase_client: Optional[Client] = None
 
 
 def get_supabase_client() -> Client:
     """
-    Supabase¯é¤¢óÈ’EöWfÖ—
+    Get or create Supabase client instance
 
     Returns:
-        Client: Supabase¯é¤¢óÈ
+        Client: Supabase client instance
 
     Raises:
-        ValueError: °ƒ	pL-šUŒfDjD4
+        ValueError: If environment variables are not set
     """
     global _supabase_client
 
@@ -33,6 +33,6 @@ def get_supabase_client() -> Client:
             raise ValueError("SUPABASE_URL and SUPABASE_KEY must be set in environment variables")
 
         _supabase_client = create_client(url, key)
-        print(f" Supabase client initialized: {url}")
+        print(f"âœ… Supabase client initialized: {url}")
 
     return _supabase_client

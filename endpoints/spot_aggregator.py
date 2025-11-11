@@ -1,7 +1,7 @@
 """
 Spot Aggregator Endpoint
 =========================
-¹İÃÈ,šÇü¿’qWLLM(×íó×È’Y‹¨óÉİ¤óÈ
+Aggregate spot recording analysis data and generate LLM prompt
 POST /aggregator/spot
 """
 
@@ -25,13 +25,13 @@ router = APIRouter()
 
 
 class SpotAggregatorRequest(BaseModel):
-    """¹İÃÈ,š×íó×Èê¯¨¹È"""
+    """Spot aggregator request schema"""
     device_id: str
-    recorded_at: str  # ISO 8601b "2025-11-10T14:30:00+09:00"
+    recorded_at: str  # ISO 8601 format: "2025-11-10T14:30:00+09:00"
 
 
 class SpotAggregatorResponse(BaseModel):
-    """¹İÃÈ,š×íó×Èì¹İó¹"""
+    """Spot aggregator response schema"""
     status: str
     device_id: str
     recorded_at: str
@@ -45,21 +45,21 @@ class SpotAggregatorResponse(BaseModel):
 @router.post("/spot", response_model=SpotAggregatorResponse)
 async def aggregate_spot(request: SpotAggregatorRequest):
     """
-    ¹İÃÈ,šÇü¿’qWLLM(×íó×È’
+    Aggregate spot recording analysis data and generate LLM prompt
 
     Args:
-        request: ÇĞ¤¹IDh2óåB
+        request: Device ID and recorded timestamp
 
     Returns:
-        q×íó×Èhá¿Çü¿
+        Aggregated prompt and metadata
 
     Raises:
-        HTTPException: Çü¿Ö—¨éü~_oæ¨éü
+        HTTPException: If data retrieval or processing fails
     """
     try:
         supabase_client = get_supabase_client()
 
-        # 1. spot_featuresK‰á¿Çü¿Ö—local_date, local_time	
+        # 1. Get metadata from spot_features (local_date, local_time)
         metadata = await get_spot_feature_metadata(
             supabase_client,
             request.device_id,
@@ -75,7 +75,7 @@ async def aggregate_spot(request: SpotAggregatorRequest):
         local_date = metadata.get('local_date')
         local_time = metadata.get('local_time')
 
-        # 2. y´½úÇü¿’&Ö—
+        # 2. Fetch analysis results
         transcription = await get_whisper_data(
             supabase_client,
             request.device_id,
@@ -94,10 +94,10 @@ async def aggregate_spot(request: SpotAggregatorRequest):
             request.recorded_at
         )
 
-        # 3. ³,şaÅ1’Ö—
+        # 3. Get subject information
         subject_info = await get_subject_info(supabase_client, request.device_id)
 
-        # 4. LLM(×íó×È’
+        # 4. Generate LLM analysis prompt
         aggregated_prompt = generate_spot_prompt(
             transcription=transcription,
             behavior_data=behavior_data,
@@ -108,7 +108,7 @@ async def aggregate_spot(request: SpotAggregatorRequest):
             subject_info=subject_info
         )
 
-        # 5. ³óÆ­¹ÈÇü¿’İX(ktb
+        # 5. Build context data for reference (optional metadata)
         context_data = {
             "has_transcription": transcription is not None and len(transcription.strip()) > 0,
             "has_behavior_data": behavior_data is not None and len(behavior_data) > 0,
@@ -118,7 +118,7 @@ async def aggregate_spot(request: SpotAggregatorRequest):
             "subject_gender": subject_info.get('gender') if subject_info else None
         }
 
-        # 6. spot_aggregatorsÆüÖëkİX
+        # 6. Save to spot_aggregators table
         insert_result = supabase_client.table('spot_aggregators').upsert({
             'device_id': request.device_id,
             'recorded_at': request.recorded_at,
