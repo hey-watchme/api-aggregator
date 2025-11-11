@@ -1,0 +1,23 @@
+version: '3.8'
+
+services:
+  api:
+    image: 754724220380.dkr.ecr.ap-southeast-2.amazonaws.com/watchme-aggregator:latest
+    container_name: aggregator-api
+    ports:
+      - "127.0.0.1:8050:8050"
+    env_file:
+      - .env
+    networks:
+      - watchme-network
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8050/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+
+networks:
+  watchme-network:
+    external: true

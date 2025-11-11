@@ -1,0 +1,16 @@
+version: '3.8'
+
+services:
+  aggregator-api:
+    build: .
+    container_name: aggregator-api-dev
+    ports:
+      - "8050:8050"
+    environment:
+      - SUPABASE_URL=${SUPABASE_URL}
+      - SUPABASE_KEY=${SUPABASE_KEY}
+      - PORT=8050
+      - DEBUG=true
+    volumes:
+      - .:/app
+    restart: unless-stopped
