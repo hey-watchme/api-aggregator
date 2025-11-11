@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-Aggregator API | ×íó×ÈAPI
+Aggregator API | çµ±åˆãƒ»ãƒ—ãƒ­ãƒ³ãƒ—ãƒˆç”ŸæˆAPI
 https://api.hey-watch.me/aggregator
-¹İÃÈ,šÇü¿’qWLLM(×íó×È’Y‹FastAPI¢×ê±ü·çó
+3ã¤ã®ç´ æï¼ˆæ–‡å­—èµ·ã“ã—ã€éŸ³éŸ¿åˆ†æã€æ„Ÿæƒ…åˆ†æï¼‰ã‚’çµ±åˆã—ã€LLMç”¨ãƒ—ãƒ­ãƒ³ãƒ—ãƒˆã‚’ç”Ÿæˆã™ã‚‹FastAPIã‚µãƒ¼ãƒ“ã‚¹
 """
 
 import os
@@ -12,61 +12,37 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from dotenv import load_dotenv
 
-# .envÕ¡¤ën­¼
+# .envãƒ•ã‚¡ã‚¤ãƒ«ã‚’èª­ã¿è¾¼ã¿
 load_dotenv()
 
-# ¨óÉİ¤óÈn¤óİüÈ
+# ã‚¨ãƒ³ãƒ‰ãƒã‚¤ãƒ³ãƒˆã‚’ã‚¤ãƒ³ãƒãƒ¼ãƒˆ
 from endpoints.spot_aggregator import router as spot_router
 
-# FastAPI¢×ê±ü·çón
+# FastAPIã‚¢ãƒ—ãƒªã‚±ãƒ¼ã‚·ãƒ§ãƒ³åˆæœŸåŒ–
 app = FastAPI(
     title="Aggregator API",
-    description="¹İÃÈ,šÇü¿’qWLLM(×íó×È’",
+    description="3ã¤ã®ç´ æã‚’çµ±åˆã—ã€LLMç”¨ãƒ—ãƒ­ãƒ³ãƒ—ãƒˆã‚’ç”Ÿæˆ",
     version="1.0.0"
 )
 
-# CORS-š
+# CORSè¨­å®š
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # ,j°ƒgoik6PWfO`UD
+    allow_origins=["*"],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
 
+# ã‚¨ãƒ³ãƒ‰ãƒã‚¤ãƒ³ãƒˆç™»éŒ²
+app.include_router(spot_router, prefix="/aggregator", tags=["spot"])
 
-@app.get("/")
-async def root():
-    """ëüÈ¨óÉİ¤óÈ"""
-    return {
-        "service": "Aggregator API",
-        "version": "1.0.0",
-        "status": "running",
-        "endpoints": {
-            "health": "/health",
-            "spot_aggregator": "/aggregator/spot"
-        }
-    }
-
-
+# ãƒ˜ãƒ«ã‚¹ãƒã‚§ãƒƒã‚¯
 @app.get("/health")
 async def health_check():
-    """Øë¹Á§Ã¯"""
-    return {
-        "status": "healthy",
-        "service": "Aggregator API"
-    }
+    return {"status": "healthy", "service": "aggregator-api"}
 
-
-# ¨óÉİ¤óÈn{2
-app.include_router(spot_router, prefix="/aggregator", tags=["Aggregator"])
-
-
+# ãƒ¡ã‚¤ãƒ³å®Ÿè¡Œ
 if __name__ == "__main__":
     port = int(os.getenv("PORT", 8050))
-    uvicorn.run(
-        "main:app",
-        host="0.0.0.0",
-        port=port,
-        reload=True  # ‹zBn
-    )
+    uvicorn.run(app, host="0.0.0.0", port=port)
