@@ -1,12 +1,18 @@
 """
 Prompt Generator Service
 =========================
-Generate LLM analysis prompts from aggregated data
+Generate LLM analysis prompts from aggregated data with timeline synchronization
 
-Key Differences from timeblock processing:
-- Uses recorded_at (ISO 8601 timestamp) instead of time_block
-- Uses device timezone to convert UTC to local time for time period calculation
-- Reuses prompt format from Vibe Aggregator with spot-specific adaptations
+Key Features:
+- Timeline-synchronized format: SED and SER data aligned by 10-second blocks
+- Technology-agnostic naming: SED (Sound Event Detection), SER (Speech Emotion Recognition)
+- Pattern detection: Automatic correlation between acoustic events and emotions
+- Full transcription included (no timestamp segmentation)
+
+Data Flow:
+- ASR (Transcription): Full text without timestamps
+- SED (Behavior): 10-second blocks with acoustic events
+- SER (Emotion): 10-second chunks with emotion scores
 """
 
 from datetime import datetime, time as time_type
@@ -28,15 +34,15 @@ def generate_spot_prompt(
     Generate comprehensive LLM analysis prompt for spot recording
 
     Args:
-        transcription: Transcribed text content
-        behavior_data: Behavior analysis results (YAMNet)
-        emotion_data: Emotion timeline data (Kushinada/OpenSMILE)
+        transcription: Transcribed text content (ASR, no timestamps)
+        behavior_data: Behavior analysis results (SED, 10-second blocks)
+        emotion_data: Emotion timeline data (SER, 10-second chunks)
         recorded_at: UTC timestamp in ISO 8601 format
         timezone_str: Device timezone (e.g., "Asia/Tokyo")
         subject_info: Subject information
 
     Returns:
-        Complete LLM analysis prompt string
+        Complete LLM analysis prompt with timeline-synchronized format
     """
     prompt_parts = []
 
@@ -221,122 +227,159 @@ Analyze the following 60-second audio recording and generate a comprehensive psy
     else:
         prompt_parts.append("- Subject: Information unavailable\n")
 
-    # ==================== 6. Data Summary ====================
-    prompt_parts.append("\n# Data Summary\n")
+    # ==================== 6. Full Transcription ====================
+    prompt_parts.append("\n# Full Transcription (60 seconds)\n")
 
-    # Transcription summary
     if transcription and transcription.strip():
-        prompt_parts.append(f"## Transcription: Available (length: {len(transcription)} characters)")
+        prompt_parts.append(f"{transcription}\n")
     else:
-        prompt_parts.append("## Transcription: Not available (no speech detected or transcription failed)")
+        prompt_parts.append("(No speech detected or transcription failed)\n")
 
-    # Emotion data summary (Kushinada)
-    if emotion_data and len(emotion_data) > 0:
-        # Extract primary emotions from each chunk
-        primary_emotions = []
-        emotion_scores = []
+    # ==================== 7. Acoustic & Emotional Timeline ====================
+    prompt_parts.append("\n# Acoustic & Emotional Timeline (10-second synchronized analysis)\n")
 
-        for chunk in emotion_data:
-            primary = chunk.get('primary_emotion', {})
-            primary_emotions.append(primary.get('name_ja', 'Unknown'))
-            emotion_scores.append(primary.get('score', 0))
+    # Check data availability
+    has_behavior = behavior_data and len(behavior_data) > 0
+    has_emotion = emotion_data and len(emotion_data) > 0
 
-        # Calculate statistics
-        avg_score = sum(emotion_scores) / len(emotion_scores) if emotion_scores else 0
-        max_score = max(emotion_scores) if emotion_scores else 0
-        min_score = min(emotion_scores) if emotion_scores else 0
-        dominant_emotion = max(set(primary_emotions), key=primary_emotions.count) if primary_emotions else "不明"
-
-        prompt_parts.append(f"""## Emotion Analysis (Kushinada) Summary:
-  - Total chunks: {len(emotion_data)} segments
-  - Dominant emotion: {dominant_emotion}
-  - Average emotion score: {avg_score:.3f}
-  - Score range: {min_score:.3f} to {max_score:.3f}
-  - Emotion timeline: {' → '.join(primary_emotions)}""")
+    if not has_behavior and not has_emotion:
+        prompt_parts.append("(No timeline data available)")
     else:
-        prompt_parts.append("## Emotion Analysis (Kushinada): Data not available")
+        # Determine number of blocks (should be 6 for 60 seconds)
+        num_blocks = max(len(behavior_data) if has_behavior else 0, len(emotion_data) if has_emotion else 0)
 
-    # Behavior data summary (YAMNet)
-    if behavior_data:
-        # Flatten time-based structure to event list
-        all_events = []
+        for i in range(num_blocks):
+            start_time = i * 10
+            end_time = (i + 1) * 10
+
+            prompt_parts.append(f"## {start_time}-{end_time}秒")
+
+            # Behavior Analysis (SED)
+            if has_behavior and i < len(behavior_data):
+                time_block = behavior_data[i]
+                events = time_block.get('events', [])
+
+                if events:
+                    # Sort events by score
+                    sorted_events = sorted(events, key=lambda x: x.get('score', 0), reverse=True)
+
+                    prompt_parts.append("**Behavior Analysis (SED):**")
+                    # Show top 3 events
+                    for event in sorted_events[:3]:
+                        label = event.get('label', 'Unknown')
+                        score = event.get('score', 0) * 100
+                        confidence = "high" if event.get('score', 0) >= 0.7 else "medium" if event.get('score', 0) >= 0.4 else "low"
+                        prompt_parts.append(f"  - {label}: {score:.1f}% ({confidence} confidence)")
+                else:
+                    prompt_parts.append("**Behavior Analysis (SED):** No events detected")
+            else:
+                prompt_parts.append("**Behavior Analysis (SED):** Data not available")
+
+            prompt_parts.append("")  # Empty line
+
+            # Emotion Analysis (SER)
+            if has_emotion and i < len(emotion_data):
+                chunk = emotion_data[i]
+                primary = chunk.get('primary_emotion', {})
+                emotions = chunk.get('emotions', [])
+
+                primary_name = primary.get('name_ja', 'Unknown')
+                primary_score = primary.get('score', 0)
+
+                prompt_parts.append("**Emotion Analysis (SER):**")
+                prompt_parts.append(f"  - Primary: {primary_name} (Score: {primary_score:.2f})")
+
+                # Show all emotions
+                if emotions:
+                    emotion_str = ', '.join([f"{e.get('name_ja', '?')}({e.get('score', 0):.2f})" for e in emotions[:4]])
+                    prompt_parts.append(f"  - All emotions: {emotion_str}")
+            else:
+                prompt_parts.append("**Emotion Analysis (SER):** Data not available")
+
+            prompt_parts.append("")  # Empty line
+
+            # Pattern interpretation
+            if has_behavior and i < len(behavior_data) and has_emotion and i < len(emotion_data):
+                events = behavior_data[i].get('events', [])
+                primary_emotion = emotion_data[i].get('primary_emotion', {}).get('name_ja', '')
+
+                # Simple pattern detection
+                has_speech = any('Speech' in e.get('label', '') for e in events)
+                has_laughter = any('Laughter' in e.get('label', '') or '笑い' in e.get('label', '') for e in events)
+                has_crying = any('Crying' in e.get('label', '') or '泣' in e.get('label', '') for e in events)
+
+                pattern = "**Pattern:** "
+                if has_laughter and '喜び' in primary_emotion:
+                    pattern += "笑い声と喜びの感情が一致 → 高信頼性のポジティブ状態"
+                elif has_crying and ('悲しみ' in primary_emotion or '怒り' in primary_emotion):
+                    pattern += "泣き声とネガティブ感情が一致 → 高信頼性の苦痛状態"
+                elif has_speech:
+                    pattern += f"会話中、{primary_emotion}の感情"
+                else:
+                    pattern += f"{primary_emotion}の感情状態"
+
+                prompt_parts.append(pattern)
+
+            prompt_parts.append("\n---\n")  # Separator between blocks
+
+    # ==================== 8. Overall Summary ====================
+    prompt_parts.append("\n# Overall Summary\n")
+
+    # Duration
+    duration = num_blocks * 10 if (has_behavior or has_emotion) else 60
+    prompt_parts.append(f"- **Duration:** {duration} seconds")
+
+    # Speech activity summary
+    if has_behavior:
+        all_speech_scores = []
         for time_block in behavior_data:
             for event in time_block.get('events', []):
-                all_events.append({
-                    'time': time_block.get('time', 0),
-                    'label': event.get('label', ''),
-                    'score': event.get('score', 0)
-                })
+                if 'Speech' in event.get('label', ''):
+                    all_speech_scores.append(event.get('score', 0))
 
-        # Sort by score (descending)
-        sorted_events = sorted(all_events, key=lambda x: x.get('score', 0), reverse=True)
+        if all_speech_scores:
+            avg_speech = sum(all_speech_scores) / len(all_speech_scores) * 100
+            max_speech = max(all_speech_scores) * 100
+            max_time = 0
+            for i, time_block in enumerate(behavior_data):
+                for event in time_block.get('events', []):
+                    if 'Speech' in event.get('label', '') and event.get('score', 0) == max(all_speech_scores):
+                        max_time = i * 10
+                        break
 
-        # Categorize events by confidence level
-        high_prob_events = [e for e in sorted_events if e.get('score', 0) >= 0.7]
-        mid_prob_events = [e for e in sorted_events if 0.4 <= e.get('score', 0) < 0.7]
+            prompt_parts.append(f"- **Speech Activity:** Average {avg_speech:.1f}%, Peak {max_speech:.1f}% at {max_time}-{max_time+10}s")
 
-        # Analysis
-        speech_events = [e for e in sorted_events if 'Speech' in e.get('label', '')]
-        speech_prob = max([e.get('score', 0) for e in speech_events], default=0) * 100
-        has_child_voice = any('Child' in e.get('label', '') or 'Baby' in e.get('label', '') for e in sorted_events[:20])
-        has_noise = any('Noise' in e.get('label', '') for e in sorted_events[:10])
-        activity_diversity = len(set([e.get('label', '') for e in sorted_events[:20] if e.get('score', 0) > 0.3]))
+        # Child voice detection
+        has_child = any(any('Child' in e.get('label', '') or 'Baby' in e.get('label', '') for e in tb.get('events', [])) for tb in behavior_data)
+        prompt_parts.append(f"- **Child Voice:** {'Detected' if has_child else 'Not detected'}")
 
-        prompt_parts.append(f"""## Behavior Analysis (YAMNet) Summary:
-  - Total detected events: {len(all_events)} events across {len(behavior_data)} time blocks
-  - High confidence events (>70%): {len(high_prob_events)}
-  - Medium confidence events (40-70%): {len(mid_prob_events)}
-  - Speech probability: {speech_prob:.1f}%
-  - Child/baby voice: {'Yes' if has_child_voice else 'No'}
-  - Noise detected: {'Yes' if has_noise else 'No'}
-  - Activity diversity: {activity_diversity} distinct activities""")
-    else:
-        prompt_parts.append("## Behavior Analysis (YAMNet): Data not available")
+    # Emotion trend summary
+    if has_emotion:
+        primary_emotions = [chunk.get('primary_emotion', {}).get('name_ja', 'Unknown') for chunk in emotion_data]
+        emotion_scores = [chunk.get('primary_emotion', {}).get('score', 0) for chunk in emotion_data]
 
-    # ==================== 7. Detailed Data ====================
-    prompt_parts.append("\n\n# Detailed Data\n")
+        avg_score = sum(emotion_scores) / len(emotion_scores)
+        max_score = max(emotion_scores)
+        min_score = min(emotion_scores)
+        max_time = emotion_scores.index(max_score) * 10
+        dominant = max(set(primary_emotions), key=primary_emotions.count)
 
-    # Full transcription
-    if transcription and transcription.strip():
-        prompt_parts.append(f"""## Full Transcription Text:
-{transcription}
-""")
+        prompt_parts.append(f"- **Emotion Trend:** {dominant} (dominant), Range: {min_score:.2f}-{max_score:.2f}, Peak: {max_time}s")
+        prompt_parts.append(f"- **Emotion Timeline:** {' → '.join(primary_emotions)}")
 
-    # Emotion timeline (Kushinada chunks)
-    if emotion_data and len(emotion_data) > 0:
-        prompt_parts.append("## Emotion Timeline (Kushinada 10-second chunks):")
-        prompt_parts.append("Time | Primary Emotion | Score | All Emotions")
-        prompt_parts.append("-----|----------------|-------|-------------")
+    # Key patterns
+    if has_behavior and has_emotion:
+        prompt_parts.append("- **Key Patterns:**")
 
-        for chunk in emotion_data:
-            start = chunk.get('start_time', 0)
-            end = chunk.get('end_time', 0)
-            primary = chunk.get('primary_emotion', {})
-            emotions = chunk.get('emotions', [])
+        # Find peak emotion and corresponding behavior
+        if emotion_scores:
+            peak_idx = emotion_scores.index(max(emotion_scores))
+            peak_emotion = emotion_data[peak_idx].get('primary_emotion', {}).get('name_ja', 'Unknown')
+            peak_events = behavior_data[peak_idx].get('events', []) if peak_idx < len(behavior_data) else []
+            peak_event_labels = [e.get('label', '').split('/')[0].strip() for e in peak_events[:2]]
 
-            emotion_str = ', '.join([f"{e.get('name_ja', '?')}({e.get('score', 0):.2f})" for e in emotions[:4]])
-            prompt_parts.append(f"{start:.0f}-{end:.0f}s | {primary.get('name_ja', '?')} | {primary.get('score', 0):.2f} | {emotion_str}")
-
-    # Behavior event details
-    if behavior_data:
-        # Flatten time-based structure again for detailed view
-        all_events = []
-        for time_block in behavior_data:
-            for event in time_block.get('events', []):
-                all_events.append({
-                    'time': time_block.get('time', 0),
-                    'label': event.get('label', ''),
-                    'score': event.get('score', 0)
-                })
-
-        sorted_events = sorted(all_events, key=lambda x: x.get('score', 0), reverse=True)
-        prompt_parts.append("\n## Detailed Behavior Events (YAMNet Top 20):")
-
-        # Show top 20 events with time information
-        for i, event in enumerate(sorted_events[:20], 1):
-            label = event.get('label', 'Unknown')
-            score = event.get('score', 0)
-            time = event.get('time', 0)
-            prompt_parts.append(f"  {i}. {label} ({time:.0f}s): {score*100:.1f}%")
+            prompt_parts.append(f"  - Emotional peak at {peak_idx*10}s ({peak_emotion}: {max(emotion_scores):.2f})")
+            if peak_event_labels:
+                prompt_parts.append(f"  - Concurrent behaviors: {', '.join(peak_event_labels)}")
 
     return "\n".join(prompt_parts)
