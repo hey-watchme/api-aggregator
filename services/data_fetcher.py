@@ -41,7 +41,7 @@ async def get_whisper_data(supabase_client, device_id: str, recorded_at: str) ->
 async def get_behavior_data(supabase_client, device_id: str, recorded_at: str) -> Optional[list]:
     """
     Fetch behavior analysis result from spot_features
-    Extract 'events' array from behavior_extractor_result JSONB column
+    Returns time-based event list directly from behavior_extractor_result
 
     Args:
         supabase_client: Supabase client instance
@@ -49,7 +49,8 @@ async def get_behavior_data(supabase_client, device_id: str, recorded_at: str) -
         recorded_at: Timestamp in ISO 8601 format
 
     Returns:
-        List of behavior events or None
+        List of time-based behavior events or None
+        Format: [{"time": 0.0, "events": [{"label": "Speech", "score": 0.76}, ...]}, ...]
     """
     try:
         result = supabase_client.table('spot_features').select('behavior_extractor_result').eq(
@@ -60,12 +61,8 @@ async def get_behavior_data(supabase_client, device_id: str, recorded_at: str) -
 
         if result.data and len(result.data) > 0:
             extractor_result = result.data[0].get('behavior_extractor_result')
-            if extractor_result:
-                # JSONB column may contain nested structure
-                # Extract 'events' array
-                if isinstance(extractor_result, dict):
-                    return extractor_result.get('events', [])
-                return []
+            if extractor_result and isinstance(extractor_result, list):
+                return extractor_result
         return None
     except Exception as e:
         print(f"Error fetching behavior data from spot_features: {e}")
@@ -75,7 +72,7 @@ async def get_behavior_data(supabase_client, device_id: str, recorded_at: str) -
 async def get_emotion_data(supabase_client, device_id: str, recorded_at: str) -> Optional[list]:
     """
     Fetch emotion analysis result from spot_features
-    Extract Kushinada emotion timeline from emotion_extractor_result
+    Returns chunk-based emotion data directly from emotion_extractor_result
 
     Args:
         supabase_client: Supabase client instance
@@ -83,7 +80,8 @@ async def get_emotion_data(supabase_client, device_id: str, recorded_at: str) ->
         recorded_at: Timestamp in ISO 8601 format
 
     Returns:
-        Emotion timeline data or None
+        Chunk-based emotion data or None
+        Format: [{"chunk_id": 1, "start_time": 0.0, "end_time": 10.0, "primary_emotion": {...}, "emotions": [...]}, ...]
     """
     try:
         result = supabase_client.table('spot_features').select('emotion_extractor_result').eq(
@@ -94,12 +92,8 @@ async def get_emotion_data(supabase_client, device_id: str, recorded_at: str) ->
 
         if result.data and len(result.data) > 0:
             extractor_result = result.data[0].get('emotion_extractor_result')
-            if extractor_result:
-                # JSONB column may contain nested structure
-                # Extract 'selected_features_timeline' array
-                if isinstance(extractor_result, dict):
-                    return extractor_result.get('selected_features_timeline', [])
-                return []
+            if extractor_result and isinstance(extractor_result, list):
+                return extractor_result
         return None
     except Exception as e:
         print(f"Error fetching emotion data from spot_features: {e}")
