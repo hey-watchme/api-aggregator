@@ -1,17 +1,95 @@
 # Aggregator API
 
-スポット測定データを統合し、LLM分析用プロンプトを生成するFastAPI
+スポット測定データを統合し、**タイムライン同期型**LLM分析用プロンプトを生成するFastAPI
 
 ---
 
 ## 概要
 
-**役割**: spot_featuresテーブルから3つの特徴抽出結果を取得し、観測対象者情報と時間コンテキストを統合してLLM用プロンプトを生成
+**役割**: spot_featuresテーブルから3つの特徴抽出結果（ASR + SED + SER）を取得し、時系列を保持した統合プロンプトを生成
+
+**プロンプト形式**: タイムライン同期型（10秒ごとにSED/SERを同期表示）
 
 **アーキテクチャ**: UTC統一アーキテクチャ（全タイムスタンプをUTCで保存、表示時にローカル時間変換）
 
 **入力**: (device_id, recorded_at)
-**出力**: spot_aggregators.prompt
+**出力**: spot_aggregators.prompt（~4000文字）
+
+---
+
+## 🎯 新プロンプトフォーマット（Timeline-Synchronized）
+
+### 主な特徴
+
+1. **Full Transcription（全文）**: 時系列なし、全体で1つのテキスト
+2. **Timeline（10秒ごと同期）**: SED（音響イベント）+ SER（感情）を同じ時間軸で表示
+3. **Pattern Detection**: 自動的に「笑い声 + 喜び」「衝突音 + 怒り」などを検出
+4. **Overall Summary**: 統計情報とキーパターン
+
+### プロンプト構造例
+
+```markdown
+# Full Transcription (60 seconds)
+ちしても良くないけどもしばんなどんばい...
+
+# Acoustic & Emotional Timeline (10-second synchronized analysis)
+
+## 0-10秒
+**Behavior Analysis (SED):**
+  - Speech / 会話・発話: 76.5% (high confidence)
+  - Child speech / 子供の声: 15.7% (low confidence)
+
+**Emotion Analysis (SER):**
+  - Primary: 喜び (Score: 3.46)
+  - All emotions: 喜び(3.46), 中立(0.81), 悲しみ(-1.17), 怒り(-2.45)
+
+**Pattern:** 会話中、喜びの感情
+
+---
+
+## 10-20秒
+**Behavior Analysis (SED):**
+  - Speech / 会話・発話: 55.8% (medium confidence)
+
+**Emotion Analysis (SER):**
+  - Primary: 喜び (Score: 5.19)  ← 感情が高揚
+
+**Pattern:** 会話中、喜びの感情
+
+---
+
+# Overall Summary
+- **Duration:** 60 seconds
+- **Speech Activity:** Average 71.1%, Peak 86.4% at 40-50s
+- **Emotion Trend:** 喜び (dominant), Range: 2.70-5.19, Peak: 10s
+- **Emotion Timeline:** 喜び → 喜び → 喜び → 喜び → 喜び → 喜び
+```
+
+### 時系列保持の効果
+
+**シーン例: 怒って物を投げた**
+```markdown
+## 10-20秒
+**Behavior Analysis (SED):**
+  - Crash / 衝突音: 68.5% (high confidence)  ← 物を投げた音
+  - Glass breaking / ガラス破損: 22.1%
+
+**Emotion Analysis (SER):**
+  - Primary: 怒り (Score: 5.89)  ← 高い怒りスコア
+
+**Pattern:** 衝突音 + 怒りの感情 → 物を投げた可能性が高い
+
+## 20-30秒（直後）
+**Behavior Analysis (SED):**
+  - Silence / 静寂: 78.3%  ← 急に静かになった
+
+**Emotion Analysis (SER):**
+  - Primary: 悲しみ (Score: 4.21)  ← 怒り→悲しみに変化
+
+**Pattern:** 怒りの後、静寂と悲しみ → 後悔・落ち着きのフェーズ
+```
+
+→ LLMが「10-20sで怒りと衝突音が同時発生。直後に静寂と悲しみ。感情の変化が物を投げた行動と整合している」と判断可能
 
 ---
 
@@ -19,9 +97,9 @@
 
 ```
 1. spot_features から3つの特徴データ取得
-   - vibe_transcriber_result (ASR: 文字起こし)
-   - behavior_extractor_result (SED: 音響イベント)
-   - emotion_extractor_result (SER: 感情)
+   - vibe_transcriber_result (ASR: 文字起こし) - 時系列なし
+   - behavior_extractor_result (SED: 音響イベント) - 10秒ブロック
+   - emotion_extractor_result (SER: 感情) - 10秒チャンク
 
 2. devices.timezone 取得
 
@@ -32,10 +110,14 @@
 
 5. subject_info 取得（年齢、性別、メモ）
 
-6. LLM用プロンプト生成（4700文字程度）
+6. タイムライン統合プロンプト生成（~4000文字）
+   - Full Transcription
+   - Timeline (10-second blocks): SED + SER 同期表示
+   - Pattern detection: 自動相関検出
+   - Overall Summary: 統計とキーパターン
 
 7. spot_aggregators テーブルに保存
-   - prompt: LLM分析用統合プロンプト
+   - prompt: タイムライン統合プロンプト
    - context_data: メタデータ（JSONB）
 ```
 
@@ -78,11 +160,11 @@ POST /aggregator/spot
   "device_id": "9f7d6e27-98c3-4c19-bdfb-f7fda58b9a93",
   "recorded_at": "2025-11-12 08:31:01.473+00",
   "timezone": "Asia/Tokyo",
-  "aggregated_prompt": "# Spot Recording Analysis Task\n\nAnalyze...",
+  "aggregated_prompt": "# Spot Recording Analysis Task\n\n...\n\n# Full Transcription (60 seconds)\n\n...\n\n# Acoustic & Emotional Timeline (10-second synchronized analysis)\n\n## 0-10秒\n**Behavior Analysis (SED):**\n  - Speech / 会話・発話: 76.5% (high confidence)\n\n**Emotion Analysis (SER):**\n  - Primary: 喜び (Score: 3.46)\n\n**Pattern:** 会話中、喜びの感情\n\n---\n\n...",
   "context_data": {
     "has_transcription": true,
-    "has_behavior_data": false,
-    "has_emotion_data": false,
+    "has_behavior_data": true,
+    "has_emotion_data": true,
     "has_subject_info": true,
     "subject_age": 5,
     "subject_gender": "男性"
@@ -90,6 +172,14 @@ POST /aggregator/spot
   "message": "Spot aggregation completed successfully"
 }
 ```
+
+**プロンプト内容** (aggregated_prompt):
+- Task Definition & Guidelines: ~2500文字
+- Temporal Context: ~200文字
+- Full Transcription: 100-500文字（可変）
+- Timeline (6 blocks × 150文字): ~900文字
+- Overall Summary: ~400文字
+- **合計**: ~4000文字
 
 ---
 
@@ -250,5 +340,35 @@ cat /home/ubuntu/aggregator/.env
 
 ---
 
+## 変更履歴
+
+### 2025-11-12 - Timeline-Synchronized Format 🎉
+
+**目的**: 時系列の文脈を保持し、LLM分析の精度向上
+
+**変更内容**:
+1. **プロンプト形式を全面刷新**
+   - 旧: ASR/SED/SERが別々のセクション
+   - 新: 10秒ごとにSED+SERを同期表示（タイムライン型）
+
+2. **技術名の汎用化**
+   - YAMNet → SED (Sound Event Detection)
+   - Kushinada → SER (Speech Emotion Recognition)
+
+3. **パターン検出機能追加**
+   - 自動的に「笑い声 + 喜び」「衝突音 + 怒り」を検出
+   - LLMが時間軸で感情と行動の相関を理解可能
+
+**効果**:
+- 「怒って物を投げた」のような複雑なシーンを正確に分析可能
+- 感情の変化（喜び→怒り→悲しみ）を時系列で追跡
+- プロンプト長: 5000文字 → 4000文字（20%削減）
+
+**修正ファイル**:
+- `services/prompt_generator.py`: 全面書き換え
+- `services/data_fetcher.py`: データ構造の修正
+
+---
+
 **最終更新**: 2025-11-12
-**ステータス**: ✅ 本番稼働中
+**ステータス**: ✅ 本番稼働中（Timeline-Synchronized Format）
