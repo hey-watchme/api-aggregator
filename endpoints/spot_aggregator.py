@@ -116,7 +116,7 @@ async def aggregate_spot(request: SpotAggregatorRequest):
         insert_result = supabase_client.table('spot_aggregators').upsert({
             'device_id': request.device_id,
             'recorded_at': request.recorded_at,
-            'aggregated_prompt': aggregated_prompt,
+            'prompt': aggregated_prompt,
             'context_data': context_data
         }).execute()
 
