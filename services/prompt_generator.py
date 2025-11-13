@@ -95,21 +95,22 @@ Analyze the following 60-second audio recording and generate a comprehensive psy
 {{
   // ===== Core Information =====
   "recorded_at": "{recorded_at}",
-  "summary": "2-3 sentence summary of the subject's situation and psychological state",
+  "summary": "対象者の状況と心理状態を2-3文で日本語で説明（例：朝食の時間。家族と一緒に食事をしている。）",
   "vibe_score": -36,
+  "behavior": "検出された主要な行動パターン3つ（カンマ区切り、会話が含まれる場合は必ず「会話」を含める）（例：会話, 食事, 家族団らん）",
 
   // ===== Psychological Analysis =====
   "psychological_analysis": {{
     "mood_state": "neutral/positive/negative/anxious/relaxed/excited/tired",
-    "mood_description": "Detailed description of the current psychological state",
-    "emotion_changes": "Notable emotional transitions or stability patterns"
+    "mood_description": "現在の心理状態の詳細な説明（日本語）",
+    "emotion_changes": "感情の変化や安定パターンの説明（日本語）"
   }},
 
   // ===== Behavioral Analysis =====
   "behavioral_analysis": {{
     "detected_activities": ["conversation", "walking", "outdoor"],
-    "behavior_pattern": "Overall behavioral patterns and daily activity context",
-    "situation_context": "Inferred situational context and environmental factors"
+    "behavior_pattern": "全体的な行動パターンと日常活動の文脈（日本語）",
+    "situation_context": "推測される状況コンテキストと環境要因（日本語）"
   }},
 
   // ===== Acoustic Metrics =====
@@ -134,9 +135,9 @@ Analyze the following 60-second audio recording and generate a comprehensive psy
 
   // ===== Key Observations =====
   "key_observations": [
-    "First notable observation about the recording",
-    "Second observation about timing or context",
-    "Third observation about detected patterns"
+    "録音に関する重要な観察事項（日本語）",
+    "タイミングや文脈に関する観察（日本語）",
+    "検出されたパターンに関する観察（日本語）"
   ]
 }}
 ```
@@ -145,6 +146,9 @@ Analyze the following 60-second audio recording and generate a comprehensive psy
 - Output must be valid JSON (no trailing commas)
 - All fields are required
 - vibe_score must be integer between -100 and +100
+- **All text fields (summary, mood_description, behavior_pattern, etc.) must be in Japanese**
+- **behavior field must contain exactly 3 key behaviors separated by commas (例: 会話, 食事, 家族団らん)**
+- **If conversation/speech is detected in SED data, "会話" MUST be included in behavior field**
 - JSON comments (// ...) are for documentation only - do not include in output
 
 # ==================== 3. Subject Information & Contextual Guidelines ====================

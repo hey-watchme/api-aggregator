@@ -352,8 +352,8 @@ cat /home/ubuntu/aggregator/.env
    - 新: 10秒ごとにSED+SERを同期表示（タイムライン型）
 
 2. **技術名の汎用化**
-   - YAMNet → SED (Sound Event Detection)
-   - Kushinada → SER (Speech Emotion Recognition)
+   - SED (Sound Event Detection)
+   - SER (Speech Emotion Recognition)
 
 3. **パターン検出機能追加**
    - 自動的に「笑い声 + 喜び」「衝突音 + 怒り」を検出
