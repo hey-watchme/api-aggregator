@@ -17,6 +17,56 @@
 
 ---
 
+## 🗺️ ルーティング詳細
+
+| 項目 | 値 | 説明 |
+|------|-----|------|
+| **🏷️ サービス名** | Aggregator API | スポット測定データ統合・プロンプト生成 |
+| **📊 役割** | データ統合 | ASR + SED + SER → LLM分析用プロンプト |
+| | | |
+| **🌐 外部アクセス（Nginx）** | | |
+| └ 公開エンドポイント | `https://api.hey-watch.me/aggregator/` | 外部からのアクセスパス |
+| └ Nginx設定ファイル | `/etc/nginx/sites-available/api.hey-watch.me` | |
+| └ proxy_pass先 | `http://localhost:8050/aggregator/` | 内部転送先 |
+| └ タイムアウト | 180秒 | read/connect/send |
+| | | |
+| **🔌 API内部エンドポイント** | | |
+| └ ヘルスチェック | `/health` | GET |
+| └ **スポット統合** | `/aggregator/spot` | POST - プロンプト生成 |
+| | | |
+| **🐳 Docker/コンテナ** | | |
+| └ コンテナ名 | `aggregator-api` | ✅ 統一命名規則 |
+| └ ポート（内部） | 8050 | コンテナ内 |
+| └ ポート（公開） | `127.0.0.1:8050:8050` | ローカルホストのみ |
+| └ ヘルスチェック | `/health` | Docker healthcheck |
+| | | |
+| **☁️ AWS ECR** | | |
+| └ リポジトリ名 | `watchme-aggregator` | ✅ ECRリポジトリ |
+| └ リージョン | ap-southeast-2 (Sydney) | |
+| └ URI | `754724220380.dkr.ecr.ap-southeast-2.amazonaws.com/watchme-aggregator:latest` | |
+| | | |
+| **⚙️ systemd** | | |
+| └ サービス名 | `aggregator-api.service` | docker-compose管理 |
+| └ 起動コマンド | `docker-compose up -d` | |
+| └ 自動起動 | enabled | サーバー再起動時に自動起動 |
+| | | |
+| **📂 ディレクトリ** | | |
+| └ ソースコード | `/Users/kaya.matsumoto/projects/watchme/api/aggregator` | ローカル |
+| └ GitHubリポジトリ | `hey-watchme/api-aggregator` | |
+| └ EC2配置場所 | `/home/ubuntu/aggregator` | 本番実行ディレクトリ |
+| | | |
+| **🔗 呼び出し元** | | |
+| └ Lambda関数 | `watchme-audio-worker` | 特徴抽出完了後に自動呼び出し |
+| └ 呼び出しURL | `https://api.hey-watch.me/aggregator/spot` | フルパス |
+| └ 環境変数 | `API_BASE_URL=https://api.hey-watch.me` | Lambda内 |
+| | | |
+| **📥 データソース** | | |
+| └ 入力テーブル | `spot_features` | ASR + SED + SERの特徴データ |
+| └ 参照テーブル | `devices` (timezone), `subjects` (年齢・性別) | メタデータ |
+| └ 出力テーブル | `spot_aggregators` | 統合プロンプト（TEXT） |
+
+---
+
 ## 🎯 新プロンプトフォーマット（Timeline-Synchronized）
 
 ### 主な特徴
