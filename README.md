@@ -342,6 +342,39 @@ cat /home/ubuntu/aggregator/.env
 
 ## 変更履歴
 
+### 2025-11-13 - Japanese Output + Behavior Field 🎉
+
+**目的**: ダッシュボード表示用に日本語出力とbehaviorフィールドを追加
+
+**変更内容**:
+1. **出力を日本語化**
+   - `summary`: 日本語で2-3文の説明（例：朝食の時間。家族と一緒に食事をしている。）
+   - `mood_description`: 現在の心理状態の詳細な説明（日本語）
+   - `behavior_pattern`: 全体的な行動パターン（日本語）
+   - `situation_context`: 推測される状況コンテキスト（日本語）
+   - `emotion_changes`: 感情の変化や安定パターン（日本語）
+   - `key_observations`: 重要な観察事項（日本語配列）
+
+2. **behaviorフィールド追加**
+   - 検出された主要な行動パターン3つ（カンマ区切り）
+   - 例：`"会話, 食事, 家族団らん"`
+   - **会話が検出された場合、必ず「会話」を含める**
+   - ダッシュボード表示用の簡潔な行動タグ
+
+**プロンプト設計**:
+- プロンプト自体は英語（LLM効率のため）
+- 出力フォーマットで日本語を明示的に指定
+
+**効果**:
+- iOSアプリ・Webダッシュボードで直接表示可能
+- ユーザーフレンドリーな日本語説明
+- 行動パターンの視覚化が容易
+
+**修正ファイル**:
+- `services/prompt_generator.py`: 出力フォーマット修正
+
+---
+
 ### 2025-11-12 - Timeline-Synchronized Format 🎉
 
 **目的**: 時系列の文脈を保持し、LLM分析の精度向上
@@ -370,5 +403,5 @@ cat /home/ubuntu/aggregator/.env
 
 ---
 
-**最終更新**: 2025-11-12
-**ステータス**: ✅ 本番稼働中（Timeline-Synchronized Format）
+**最終更新**: 2025-11-13
+**ステータス**: ✅ 本番稼働中（Japanese Output + Behavior Field）
