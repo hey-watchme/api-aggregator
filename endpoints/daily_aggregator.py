@@ -89,13 +89,13 @@ Analyze the following {len(spot_results)} spot recordings from {local_date} and 
 Return ONLY a valid JSON object with the following structure:
 ```json
 {{
-  "summary": "1ÂnœÑj√∂Kí2-3ágÂ,û	",
+  "summary": "Japanese summary in 2-3 sentences",
   "vibe_score": <average vibe score as integer>,
-  "behavior": ";ÅL’1, ;ÅL’2, ;ÅL’3",
+  "behavior": "behavior1, behavior2, behavior3",
   "profile_result": {{
-    "daily_trend": "1Ân»ÏÛ…Â,û	",
-    "key_moments": ["ÕÅj¨ì1", "ÕÅj¨ì2"],
-    "emotional_stability": "âö'U°Â,û	"
+    "daily_trend": "Daily trend description in Japanese",
+    "key_moments": ["moment1", "moment2"],
+    "emotional_stability": "Emotional stability assessment in Japanese"
   }}
 }}
 ```
@@ -130,7 +130,7 @@ async def aggregate_daily(request: DailyAggregatorRequest):
         supabase_client = get_supabase_client()
 
         # 1. Fetch all spot_results for the given local_date
-        print(f"\n=≈ Daily aggregation started")
+        print(f"\n=== Daily aggregation started")
         print(f"  - Device ID: {request.device_id}")
         print(f"  - Local Date: {request.local_date}")
 
@@ -148,7 +148,7 @@ async def aggregate_daily(request: DailyAggregatorRequest):
 
         spot_results = result.data
         spot_count = len(spot_results)
-        print(f"   Found {spot_count} spot recordings for {request.local_date}")
+        print(f"   Found {spot_count} spot recordings for {request.local_date}")
 
         # 2. Generate daily aggregation prompt
         aggregated_prompt = generate_daily_prompt(
@@ -183,7 +183,7 @@ async def aggregate_daily(request: DailyAggregatorRequest):
                 detail="Failed to save aggregated prompt to daily_aggregators table"
             )
 
-        print(f"   Daily aggregation saved to daily_aggregators table")
+        print(f"   Daily aggregation saved to daily_aggregators table")
 
         return DailyAggregatorResponse(
             status="success",
