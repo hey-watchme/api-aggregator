@@ -15,7 +15,8 @@ from services.data_fetcher import (
     get_whisper_data,
     get_behavior_data,
     get_emotion_data,
-    get_device_timezone
+    get_device_timezone,
+    get_local_date
 )
 from services.subject_fetcher import get_subject_info
 from services.prompt_generator import generate_spot_prompt
@@ -70,7 +71,7 @@ async def aggregate_spot(request: SpotAggregatorRequest):
                 detail=f"No timezone found for device_id={request.device_id}"
             )
 
-        # 2. Fetch analysis results
+        # 2. Fetch analysis results and local_date
         transcription = await get_whisper_data(
             supabase_client,
             request.device_id,
@@ -84,6 +85,12 @@ async def aggregate_spot(request: SpotAggregatorRequest):
         )
 
         emotion_data = await get_emotion_data(
+            supabase_client,
+            request.device_id,
+            request.recorded_at
+        )
+
+        local_date = await get_local_date(
             supabase_client,
             request.device_id,
             request.recorded_at
@@ -113,12 +120,18 @@ async def aggregate_spot(request: SpotAggregatorRequest):
         }
 
         # 6. Save to spot_aggregators table
-        insert_result = supabase_client.table('spot_aggregators').upsert({
+        upsert_data = {
             'device_id': request.device_id,
             'recorded_at': request.recorded_at,
             'prompt': aggregated_prompt,
             'context_data': context_data
-        }).execute()
+        }
+
+        # Add local_date if available
+        if local_date:
+            upsert_data['local_date'] = local_date
+
+        insert_result = supabase_client.table('spot_aggregators').upsert(upsert_data).execute()
 
         if not insert_result.data:
             raise HTTPException(

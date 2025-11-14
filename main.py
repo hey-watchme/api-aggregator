@@ -17,6 +17,7 @@ load_dotenv()
 
 # エンドポイントをインポート
 from endpoints.spot_aggregator import router as spot_router
+from endpoints.daily_aggregator import router as daily_router
 
 # FastAPIアプリケーション初期化
 app = FastAPI(
@@ -36,6 +37,7 @@ app.add_middleware(
 
 # エンドポイント登録
 app.include_router(spot_router, prefix="/aggregator", tags=["spot"])
+app.include_router(daily_router, prefix="/aggregator", tags=["daily"])
 
 # ヘルスチェック
 @app.get("/health")
