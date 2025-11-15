@@ -127,6 +127,33 @@ async def get_local_date(supabase_client, device_id: str, recorded_at: str) -> O
         return None
 
 
+async def get_local_time(supabase_client, device_id: str, recorded_at: str) -> Optional[str]:
+    """
+    Fetch local_time from spot_features
+
+    Args:
+        supabase_client: Supabase client instance
+        device_id: Device ID
+        recorded_at: Timestamp in ISO 8601 format
+
+    Returns:
+        Local time string (YYYY-MM-DD HH:MM:SS) or None
+    """
+    try:
+        result = supabase_client.table('spot_features').select('local_time').eq(
+            'device_id', device_id
+        ).eq(
+            'recorded_at', recorded_at
+        ).execute()
+
+        if result.data and len(result.data) > 0:
+            return result.data[0].get('local_time')
+        return None
+    except Exception as e:
+        print(f"Error fetching local_time from spot_features: {e}")
+        return None
+
+
 async def get_device_timezone(supabase_client, device_id: str) -> Optional[str]:
     """
     Fetch timezone from devices table

@@ -16,7 +16,8 @@ from services.data_fetcher import (
     get_behavior_data,
     get_emotion_data,
     get_device_timezone,
-    get_local_date
+    get_local_date,
+    get_local_time
 )
 from services.subject_fetcher import get_subject_info
 from services.prompt_generator import generate_spot_prompt
@@ -96,6 +97,12 @@ async def aggregate_spot(request: SpotAggregatorRequest):
             request.recorded_at
         )
 
+        local_time = await get_local_time(
+            supabase_client,
+            request.device_id,
+            request.recorded_at
+        )
+
         # 3. Get subject information
         subject_info = await get_subject_info(supabase_client, request.device_id)
 
@@ -127,9 +134,11 @@ async def aggregate_spot(request: SpotAggregatorRequest):
             'context_data': context_data
         }
 
-        # Add local_date if available
+        # Add local_date and local_time if available
         if local_date:
             upsert_data['local_date'] = local_date
+        if local_time:
+            upsert_data['local_time'] = local_time
 
         insert_result = supabase_client.table('spot_aggregators').upsert(upsert_data).execute()
 
