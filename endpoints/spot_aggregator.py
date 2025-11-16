@@ -113,7 +113,8 @@ async def aggregate_spot(request: SpotAggregatorRequest):
             emotion_data=emotion_data,
             recorded_at=request.recorded_at,
             timezone_str=timezone_str,
-            subject_info=subject_info
+            subject_info=subject_info,
+            local_time=local_time
         )
 
         # 5. Build context data for reference (optional metadata)

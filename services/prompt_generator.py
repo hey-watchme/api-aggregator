@@ -28,7 +28,8 @@ def generate_spot_prompt(
     emotion_data: Optional[list],
     recorded_at: str,
     timezone_str: str,
-    subject_info: Optional[Dict] = None
+    subject_info: Optional[Dict] = None,
+    local_time: Optional[str] = None
 ) -> str:
     """
     Generate comprehensive LLM analysis prompt for spot recording
@@ -40,37 +41,53 @@ def generate_spot_prompt(
         recorded_at: UTC timestamp in ISO 8601 format
         timezone_str: Device timezone (e.g., "Asia/Tokyo")
         subject_info: Subject information
+        local_time: Local datetime string from database (e.g., "2025-11-16 12:31:01.485")
 
     Returns:
         Complete LLM analysis prompt with timeline-synchronized format
     """
     prompt_parts = []
 
-    # Convert UTC to local time using device timezone
+    # Use local_time from database if available, otherwise convert from UTC
     try:
-        # Parse ISO 8601 timestamp
-        recorded_at_dt = datetime.fromisoformat(recorded_at.replace('Z', '+00:00'))
+        if local_time:
+            # Parse local_time from database (e.g., "2025-11-16 12:31:01.485")
+            local_time_dt = datetime.fromisoformat(local_time)
 
-        # Get timezone object
-        timezone = pytz.timezone(timezone_str)
+            # Extract components
+            hour = local_time_dt.hour
+            minute = local_time_dt.minute
+            local_date = local_time_dt.strftime('%Y-%m-%d')
+            local_time_str = local_time_dt.strftime('%H:%M:%S')
 
-        # Convert to local time
-        local_time_dt = recorded_at_dt.astimezone(timezone)
+            print(f"Using local_time from database: {local_time}")
+        else:
+            # Fallback: Convert UTC to local time using device timezone
+            print(f"Warning: local_time not provided, converting from UTC")
 
-        # Extract components
-        hour = local_time_dt.hour
-        minute = local_time_dt.minute
-        local_date = local_time_dt.strftime('%Y-%m-%d')
-        local_time = local_time_dt.strftime('%H:%M:%S')
+            # Parse ISO 8601 timestamp
+            recorded_at_dt = datetime.fromisoformat(recorded_at.replace('Z', '+00:00'))
+
+            # Get timezone object
+            timezone = pytz.timezone(timezone_str)
+
+            # Convert to local time
+            local_time_dt = recorded_at_dt.astimezone(timezone)
+
+            # Extract components
+            hour = local_time_dt.hour
+            minute = local_time_dt.minute
+            local_date = local_time_dt.strftime('%Y-%m-%d')
+            local_time_str = local_time_dt.strftime('%H:%M:%S')
 
     except Exception as e:
-        print(f"Error converting timezone: {e}")
+        print(f"Error processing local_time: {e}")
         # Fallback to UTC
         recorded_at_dt = datetime.fromisoformat(recorded_at.replace('Z', '+00:00'))
         hour = recorded_at_dt.hour
         minute = recorded_at_dt.minute
         local_date = recorded_at_dt.strftime('%Y-%m-%d')
-        local_time = recorded_at_dt.strftime('%H:%M:%S')
+        local_time_str = recorded_at_dt.strftime('%H:%M:%S')
 
     # Get time period
     time_period = get_time_period(hour)

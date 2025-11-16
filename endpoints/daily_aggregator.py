@@ -51,16 +51,23 @@ def generate_daily_prompt(spot_results: List[Dict], local_date: str, device_id: 
 
     for idx, spot in enumerate(spot_results, 1):
         recorded_at = spot.get('recorded_at', '')
+        local_time = spot.get('local_time', '')
         summary = spot.get('summary', 'No summary available')
         vibe_score = spot.get('vibe_score', 0)
         behavior = spot.get('behavior', '')
 
-        # Extract time from recorded_at (assuming ISO format)
+        # Extract time from local_time (preferred) or recorded_at (fallback)
         try:
-            dt = datetime.fromisoformat(recorded_at.replace('Z', '+00:00'))
-            time_str = dt.strftime('%H:%M')
+            if local_time:
+                # Use local_time from database (already in device timezone)
+                dt = datetime.fromisoformat(local_time)
+                time_str = dt.strftime('%H:%M')
+            else:
+                # Fallback: parse recorded_at (UTC)
+                dt = datetime.fromisoformat(recorded_at.replace('Z', '+00:00'))
+                time_str = dt.strftime('%H:%M')
         except:
-            time_str = recorded_at
+            time_str = local_time if local_time else recorded_at
 
         entry = f"""Recording #{idx} - {time_str}
 - Summary: {summary}
