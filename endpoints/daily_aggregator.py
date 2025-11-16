@@ -82,28 +82,29 @@ def generate_daily_prompt(spot_results: List[Dict], local_date: str, device_id: 
     prompt = f"""# Daily Psychological Analysis Task
 
 ## Task Overview
-Analyze the following {len(spot_results)} spot recordings from {local_date} and generate a comprehensive daily psychological summary.
+Analyze the following {len(spot_results)} spot recordings from {local_date} and identify significant emotional changes (burst events).
 
 ## Instructions
 1. Review all spot recordings chronologically
-2. Identify overall mood patterns and emotional trends
-3. Detect significant behavioral changes throughout the day
-4. Generate a concise Japanese summary (2-3 sentences)
-5. Calculate average vibe score
-6. Extract key behaviors (comma-separated, max 3)
+2. Identify significant vibe score changes (≥30 points)
+3. For each burst event, provide:
+   - time: when it occurred (HH:MM format)
+   - event: contextual insight in Japanese (why the change happened)
+   - score_change: magnitude of change
+4. Generate a concise daily summary in Japanese (2-3 sentences)
 
 ## Output Format (JSON)
-Return ONLY a valid JSON object with the following structure:
+Return ONLY a valid JSON object:
 ```json
 {{
-  "summary": "Japanese summary in 2-3 sentences",
-  "vibe_score": <average vibe score as integer>,
-  "behavior": "behavior1, behavior2, behavior3",
-  "profile_result": {{
-    "daily_trend": "Daily trend description in Japanese",
-    "key_moments": ["moment1", "moment2"],
-    "emotional_stability": "Emotional stability assessment in Japanese"
-  }}
+  "summary": "Japanese summary in 2-3 sentences describing the overall day",
+  "burst_events": [
+    {{
+      "time": "HH:MM",
+      "event": "Contextual insight in Japanese explaining the score change",
+      "score_change": <integer>
+    }}
+  ]
 }}
 ```
 
@@ -113,7 +114,7 @@ Return ONLY a valid JSON object with the following structure:
 
 ---
 
-**Important**: Return ONLY the JSON object. Do not include any explanations or markdown code blocks.
+**Important**: Return ONLY the JSON object. Do not include markdown code blocks.
 """
 
     return prompt
