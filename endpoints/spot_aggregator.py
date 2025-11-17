@@ -149,6 +149,16 @@ async def aggregate_spot(request: SpotAggregatorRequest):
                 detail="Failed to save aggregated prompt to spot_aggregators table"
             )
 
+        # 7. Update spot_features table status (mark as processed by aggregator)
+        try:
+            supabase_client.table('spot_features').update({
+                'spot_aggregator_status': 'completed'
+            }).eq('device_id', request.device_id).eq('recorded_at', request.recorded_at).execute()
+            print(f"✅ Updated spot_features.spot_aggregator_status to 'completed' for {request.device_id}/{request.recorded_at}")
+        except Exception as update_error:
+            print(f"⚠️ Warning: Failed to update spot_features.spot_aggregator_status: {update_error}")
+            # Continue execution even if status update fails
+
         return SpotAggregatorResponse(
             status="success",
             device_id=request.device_id,

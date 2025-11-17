@@ -193,6 +193,16 @@ async def aggregate_daily(request: DailyAggregatorRequest):
 
         print(f"   Daily aggregation saved to daily_aggregators table")
 
+        # 5. Update spot_results table status (mark all spots as processed by daily aggregator)
+        try:
+            supabase_client.table('spot_results').update({
+                'daily_aggregator_status': 'completed'
+            }).eq('device_id', request.device_id).eq('local_date', request.local_date).execute()
+            print(f"✅ Updated {spot_count} spot_results.daily_aggregator_status to 'completed' for {request.device_id}/{request.local_date}")
+        except Exception as update_error:
+            print(f"⚠️ Warning: Failed to update spot_results.daily_aggregator_status: {update_error}")
+            # Continue execution even if status update fails
+
         return DailyAggregatorResponse(
             status="success",
             device_id=request.device_id,
