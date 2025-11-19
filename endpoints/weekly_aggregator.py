@@ -70,17 +70,17 @@ def generate_weekly_prompt(spot_features: List[Dict], week_start_date: str, week
         recorded_at = spot.get('recorded_at', '')
         local_date = spot.get('local_date', '')
         local_time = spot.get('local_time', '')
-        vibe_transcriber_result = spot.get('vibe_transcriber_result', {})
+        vibe_transcriber_result = spot.get('vibe_transcriber_result', '')
 
         # Extract transcription text
-        # Handle both dict and JSON string formats
-        if isinstance(vibe_transcriber_result, str):
-            try:
-                vibe_transcriber_result = json.loads(vibe_transcriber_result)
-            except:
-                vibe_transcriber_result = {}
-
-        transcription = vibe_transcriber_result.get('transcription', 'No transcription available') if isinstance(vibe_transcriber_result, dict) else 'No transcription available'
+        # vibe_transcriber_result is stored as plain text, not JSON
+        if isinstance(vibe_transcriber_result, str) and vibe_transcriber_result.strip():
+            transcription = vibe_transcriber_result
+        elif isinstance(vibe_transcriber_result, dict):
+            # Fallback: handle dict format if schema changes
+            transcription = vibe_transcriber_result.get('transcription', 'No transcription available')
+        else:
+            transcription = 'No transcription available'
 
         # Extract time
         try:
