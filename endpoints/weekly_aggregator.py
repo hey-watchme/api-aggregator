@@ -222,9 +222,10 @@ async def aggregate_weekly(request: WeeklyAggregatorRequest):
 
         # 3. Build context data
         context_data = {
-            "spot_count": spot_count,
+            "week_range": f"{request.week_start_date} - {week_end_date}",
             "week_start_date": request.week_start_date,
             "week_end_date": week_end_date,
+            "spot_count": spot_count,
             "recording_times": [spot.get('recorded_at') for spot in spot_features]
         }
 
@@ -232,7 +233,6 @@ async def aggregate_weekly(request: WeeklyAggregatorRequest):
         upsert_data = {
             'device_id': request.device_id,
             'week_start_date': request.week_start_date,
-            'week_end_date': week_end_date,
             'prompt': aggregated_prompt,
             'context_data': context_data
         }
