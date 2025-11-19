@@ -33,6 +33,8 @@
 | **🔌 API内部エンドポイント** | | |
 | └ ヘルスチェック | `/health` | GET |
 | └ **スポット統合** | `/aggregator/spot` | POST - プロンプト生成 |
+| └ **デイリー統合** | `/aggregator/daily` | POST - 日次プロンプト生成 |
+| └ **ウィークリー統合** | `/aggregator/weekly` | POST - 週次プロンプト生成 (試験段階) |
 | | | |
 | **🐳 Docker/コンテナ** | | |
 | └ コンテナ名 | `aggregator-api` | ✅ 統一命名規則 |
@@ -63,7 +65,7 @@
 | **📥 データソース** | | |
 | └ 入力テーブル | `spot_features` | ASR + SED + SERの特徴データ |
 | └ 参照テーブル | `devices` (timezone), `subjects` (年齢・性別) | メタデータ |
-| └ 出力テーブル | `spot_aggregators` | 統合プロンプト（TEXT） |
+| └ 出力テーブル | `spot_aggregators`, `daily_aggregators`, `weekly_aggregators` | 統合プロンプト（TEXT） |
 
 ---
 
@@ -453,5 +455,118 @@ cat /home/ubuntu/aggregator/.env
 
 ---
 
-**最終更新**: 2025-11-13
-**ステータス**: ✅ 本番稼働中（Japanese Output + Behavior Field）
+## 📅 Weekly Aggregator ✅ (試験段階)
+
+### 概要
+
+**実装日**: 2025-11-19
+**ステータス**: ✅ 実装済み - **試験段階（アプリ・ワークフロー未統合）**
+
+週次（月曜〜日曜）の録音データから印象的な出来事5件を選出するためのプロンプトを生成。
+
+### エンドポイント
+
+```bash
+curl -X POST https://api.hey-watch.me/aggregator/weekly \
+  -H "Content-Type: application/json" \
+  -d '{
+    "device_id": "9f7d6e27-98c3-4c19-bdfb-f7fda58b9a93",
+    "week_start_date": "2025-11-10"
+  }'
+```
+
+**パラメータ**:
+- `device_id`: デバイスID
+- `week_start_date`: 週の開始日（月曜日、YYYY-MM-DD形式）
+
+### データフロー
+
+```
+spot_features (vibe_transcriber_result)
+    ↓
+1週間分（月曜〜日曜）の発話内容を取得
+    ↓
+Weekly Aggregator: プロンプト生成
+    ↓
+weekly_aggregators テーブルに保存
+    ↓
+(手動実行) Profiler API: /weekly-profiler
+    ↓
+weekly_results テーブルに保存
+```
+
+### 処理フロー
+
+1. `spot_features`から1週間分（月曜〜日曜）のデータを取得
+2. `vibe_transcriber_result`（発話内容）を時系列で整理
+3. LLMに「印象的なイベント5件を選出」するプロンプトを生成
+4. `weekly_aggregators`テーブルに保存
+
+### 出力データ構造
+
+**weekly_aggregators テーブル**:
+```sql
+CREATE TABLE weekly_aggregators (
+  device_id TEXT NOT NULL,
+  week_start_date DATE NOT NULL,  -- 月曜日
+  prompt TEXT NOT NULL,            -- LLM用プロンプト
+  context_data JSONB,              -- メタデータ
+  created_at TIMESTAMPTZ DEFAULT NOW(),
+  PRIMARY KEY (device_id, week_start_date)
+);
+```
+
+**context_data 例**:
+```json
+{
+  "week_range": "2025-11-10 - 2025-11-16",
+  "week_start_date": "2025-11-10",
+  "week_end_date": "2025-11-16",
+  "spot_count": 60,
+  "recording_times": ["2025-11-14T21:01:01.759+00:00", ...]
+}
+```
+
+### プロンプト内容
+
+- タスク: 1週間の録音データから印象的なイベント5件を選出
+- 選出基準:
+  - 興味深い会話内容
+  - 記憶に残る出来事
+  - 週全体の多様性を考慮
+- 出力形式: JSON（rank、date、time、day_of_week、event_summary、transcription_snippet）
+
+### レスポンス例
+
+```json
+{
+  "status": "success",
+  "device_id": "9f7d6e27-98c3-4c19-bdfb-f7fda58b9a93",
+  "week_start_date": "2025-11-10",
+  "week_end_date": "2025-11-16",
+  "spot_count": 60,
+  "aggregated_prompt": "# Weekly Memorable Events Selection Task...",
+  "context_data": {
+    "week_range": "2025-11-10 - 2025-11-16",
+    "spot_count": 60
+  },
+  "message": "Weekly aggregation completed successfully for 2025-11-10 to 2025-11-16"
+}
+```
+
+### 注意事項
+
+⚠️ **現在は試験段階**:
+- アプリのワークフローには未統合
+- 手動でAPIを呼び出してテスト可能
+- Lambda自動トリガーなし
+- 今後の機能拡張で本番導入予定
+
+### 関連エンドポイント
+
+- **Profiler API**: `/profiler/weekly-profiler` - LLM分析実行（weekly_aggregatorsのプロンプトを使用）
+
+---
+
+**最終更新**: 2025-11-19
+**ステータス**: ✅ 本番稼働中（Spot + Daily）、試験段階（Weekly）
