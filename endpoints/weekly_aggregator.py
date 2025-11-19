@@ -232,6 +232,7 @@ async def aggregate_weekly(request: WeeklyAggregatorRequest):
         upsert_data = {
             'device_id': request.device_id,
             'week_start_date': request.week_start_date,
+            'week_end_date': week_end_date,
             'prompt': aggregated_prompt,
             'context_data': context_data
         }
