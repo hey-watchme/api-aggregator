@@ -495,12 +495,41 @@ weekly_aggregators テーブルに保存
 weekly_results テーブルに保存
 ```
 
+### 週の定義
+
+**月曜始まり（ISO 8601準拠）**:
+- 週の開始: 月曜日 00:00
+- 週の終了: 日曜日 23:59
+- `week_start_date`: 必ず月曜日の日付（YYYY-MM-DD）
+
+**実装箇所**:
+- `endpoints/weekly_aggregator.py` の `get_week_end_date()` 関数
+- ロジック: `week_start_date + 6日 = week_end_date`（日曜日）
+
+### 更新タイミングの想定
+
+**毎日更新方式**:
+- 毎日日付が変わった際（00:00）に前日の日付を含む週のデータを再処理
+- 週の途中でも常に最新のweekly dataが閲覧可能
+- 例: 水曜日の場合
+  - 対象週: 月曜〜日曜（月〜水のデータのみ存在）
+  - 翌日（木曜）に再実行 → 月〜木のデータで更新
+  - 日曜まで毎日更新 → 週が完成
+
+**データ取得ロジック**:
+```sql
+-- spot_features から local_date で範囲取得
+WHERE device_id = ?
+  AND local_date >= '2025-11-17'  -- Monday
+  AND local_date <= '2025-11-23'  -- Sunday
+```
+
 ### 処理フロー
 
 1. `spot_features`から1週間分（月曜〜日曜）のデータを取得
 2. `vibe_transcriber_result`（発話内容）を時系列で整理
 3. LLMに「印象的なイベント5件を選出」するプロンプトを生成
-4. `weekly_aggregators`テーブルに保存
+4. `weekly_aggregators`テーブルに保存（UPSERT - 既存データは上書き）
 
 ### 出力データ構造
 
@@ -554,12 +583,38 @@ CREATE TABLE weekly_aggregators (
 }
 ```
 
+### 自動実行の想定（未実装）
+
+**将来の自動化案**:
+1. **Lambda関数**: 毎日 00:00 に実行
+2. **処理内容**:
+   ```python
+   # 前日の日付を含む週の月曜日を計算
+   yesterday = today - timedelta(days=1)
+   week_monday = yesterday - timedelta(days=yesterday.weekday())
+
+   # Weekly Aggregator API呼び出し
+   POST /aggregator/weekly
+   {
+     "device_id": "...",
+     "week_start_date": week_monday  # YYYY-MM-DD (Monday)
+   }
+
+   # Weekly Profiler API呼び出し
+   POST /profiler/weekly-profiler
+   {
+     "device_id": "...",
+     "week_start_date": week_monday
+   }
+   ```
+3. **結果**: 週の途中でも毎日最新データに更新
+
 ### 注意事項
 
 ⚠️ **現在は試験段階**:
 - アプリのワークフローには未統合
 - 手動でAPIを呼び出してテスト可能
-- Lambda自動トリガーなし
+- Lambda自動トリガーなし（上記の自動化案は未実装）
 - 今後の機能拡張で本番導入予定
 
 ### 関連エンドポイント
