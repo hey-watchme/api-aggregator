@@ -263,6 +263,10 @@ Analyze the following 60-second audio recording and generate a comprehensive psy
     has_behavior = behavior_data and len(behavior_data) > 0
     has_emotion = emotion_data and len(emotion_data) > 0
 
+    # Determine if emotion data should be filtered based on ASR results
+    # Skip emotion analysis if no speech detected in transcription
+    skip_emotion_analysis = not transcription or not transcription.strip() or transcription.strip() == "(No speech detected or transcription failed)"
+
     if not has_behavior and not has_emotion:
         prompt_parts.append("(No timeline data available)")
     else:
@@ -298,8 +302,10 @@ Analyze the following 60-second audio recording and generate a comprehensive psy
 
             prompt_parts.append("")  # Empty line
 
-            # Emotion Analysis (SER)
-            if has_emotion and i < len(emotion_data):
+            # Emotion Analysis (SER) - Filter based on ASR results
+            if skip_emotion_analysis:
+                prompt_parts.append("**Emotion Analysis (SER):** No speech detected - emotion data not applicable")
+            elif has_emotion and i < len(emotion_data):
                 chunk = emotion_data[i]
                 primary = chunk.get('primary_emotion', {})
                 emotions = chunk.get('emotions', [])
@@ -319,8 +325,8 @@ Analyze the following 60-second audio recording and generate a comprehensive psy
 
             prompt_parts.append("")  # Empty line
 
-            # Pattern interpretation
-            if has_behavior and i < len(behavior_data) and has_emotion and i < len(emotion_data):
+            # Pattern interpretation - Only if emotion data is valid
+            if not skip_emotion_analysis and has_behavior and i < len(behavior_data) and has_emotion and i < len(emotion_data):
                 events = behavior_data[i].get('events', [])
                 primary_emotion = emotion_data[i].get('primary_emotion', {}).get('name_ja', '')
 
@@ -340,6 +346,12 @@ Analyze the following 60-second audio recording and generate a comprehensive psy
                     pattern += f"{primary_emotion}の感情状態"
 
                 prompt_parts.append(pattern)
+            elif skip_emotion_analysis and has_behavior and i < len(behavior_data):
+                # Pattern for behavior-only (no emotion)
+                events = behavior_data[i].get('events', [])
+                if events:
+                    top_event = events[0].get('label', '').split('/')[0].strip()
+                    prompt_parts.append(f"**Pattern:** {top_event}の状態")
 
             prompt_parts.append("\n---\n")  # Separator between blocks
 
@@ -374,8 +386,8 @@ Analyze the following 60-second audio recording and generate a comprehensive psy
         has_child = any(any('Child' in e.get('label', '') or 'Baby' in e.get('label', '') for e in tb.get('events', [])) for tb in behavior_data)
         prompt_parts.append(f"- **Child Voice:** {'Detected' if has_child else 'Not detected'}")
 
-    # Emotion trend summary
-    if has_emotion:
+    # Emotion trend summary - Only if speech detected
+    if has_emotion and not skip_emotion_analysis:
         primary_emotions = [chunk.get('primary_emotion', {}).get('name_ja', 'Unknown') for chunk in emotion_data]
         emotion_scores = [chunk.get('primary_emotion', {}).get('score', 0) for chunk in emotion_data]
 
@@ -387,12 +399,15 @@ Analyze the following 60-second audio recording and generate a comprehensive psy
 
         prompt_parts.append(f"- **Emotion Trend:** {dominant} (dominant), Range: {min_score:.2f}-{max_score:.2f}, Peak: {max_time}s")
         prompt_parts.append(f"- **Emotion Timeline:** {' → '.join(primary_emotions)}")
+    elif has_emotion and skip_emotion_analysis:
+        prompt_parts.append(f"- **Emotion Trend:** No speech detected - emotion data skipped for all {len(emotion_data)} segments")
 
-    # Key patterns
-    if has_behavior and has_emotion:
+    # Key patterns - Only if emotion data is valid
+    if has_behavior and has_emotion and not skip_emotion_analysis:
         prompt_parts.append("- **Key Patterns:**")
 
         # Find peak emotion and corresponding behavior
+        emotion_scores = [chunk.get('primary_emotion', {}).get('score', 0) for chunk in emotion_data]
         if emotion_scores:
             peak_idx = emotion_scores.index(max(emotion_scores))
             peak_emotion = emotion_data[peak_idx].get('primary_emotion', {}).get('name_ja', 'Unknown')
