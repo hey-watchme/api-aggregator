@@ -100,10 +100,16 @@ def generate_spot_prompt(
     month = int(local_date.split('-')[1])
     season = get_season(month)
 
+    # Calculate duration from data
+    has_behavior = behavior_data and len(behavior_data) > 0
+    has_emotion = emotion_data and len(emotion_data) > 0
+    num_blocks = max(len(behavior_data) if has_behavior else 0, len(emotion_data) if has_emotion else 0)
+    duration = num_blocks * 10 if num_blocks > 0 else 60
+
     # ==================== 1. Task Definition ====================
     prompt_parts.append(f"""# Spot Recording Analysis Task
 
-Analyze the following 60-second audio recording and generate a comprehensive psychological analysis in JSON format.
+Analyze the following {duration}-second audio recording and generate a comprehensive psychological analysis in JSON format.
 """)
 
     # ==================== 2. Context Information ====================
@@ -117,12 +123,12 @@ Analyze the following 60-second audio recording and generate a comprehensive psy
 # Recording Context
 
 **Temporal Information:**
+- Duration: {duration} seconds
 - Country: Japan
 - Season: {season}
 - Date: {local_date}
 - Day: {weekday_info['weekday']} ({weekday_info['day_type']}) {holiday_context_text}
 - Local Time: {hour:02d}:{minute:02d} ({time_period})
-- Recorded At (UTC): {recorded_at}
 
 **Subject Information:**
 {generate_age_context(subject_info)}
@@ -190,7 +196,7 @@ Analyze the following 60-second audio recording and generate a comprehensive psy
 """)
 
     # ==================== 5. Full Transcription ====================
-    prompt_parts.append("\n# Full Transcription (60 seconds)\n")
+    prompt_parts.append("\n# Full Transcription\n")
 
     if transcription and transcription.strip():
         prompt_parts.append(f"{transcription}\n")
@@ -199,10 +205,6 @@ Analyze the following 60-second audio recording and generate a comprehensive psy
 
     # ==================== 6. Acoustic & Emotional Timeline ====================
     prompt_parts.append("\n# Acoustic & Emotional Timeline (10-second synchronized analysis)\n")
-
-    # Check data availability
-    has_behavior = behavior_data and len(behavior_data) > 0
-    has_emotion = emotion_data and len(emotion_data) > 0
 
     # Determine if emotion data should be filtered based on ASR results
     # Skip emotion analysis if no speech detected in transcription
@@ -215,9 +217,6 @@ Analyze the following 60-second audio recording and generate a comprehensive psy
     if not has_behavior and not has_emotion:
         prompt_parts.append("(No timeline data available)")
     else:
-        # Determine number of blocks (should be 6 for 60 seconds)
-        num_blocks = max(len(behavior_data) if has_behavior else 0, len(emotion_data) if has_emotion else 0)
-
         for i in range(num_blocks):
             start_time = i * 10
             end_time = (i + 1) * 10
@@ -299,68 +298,5 @@ Analyze the following 60-second audio recording and generate a comprehensive psy
                     prompt_parts.append(f"**Pattern:** {top_event}の状態")
 
             prompt_parts.append("\n---\n")  # Separator between blocks
-
-    # ==================== 7. Overall Summary ====================
-    prompt_parts.append("\n# Overall Summary\n")
-
-    # Duration
-    duration = num_blocks * 10 if (has_behavior or has_emotion) else 60
-    prompt_parts.append(f"- **Duration:** {duration} seconds")
-
-    # Speech activity summary
-    if has_behavior:
-        all_speech_scores = []
-        for time_block in behavior_data:
-            for event in time_block.get('events', []):
-                if 'Speech' in event.get('label', ''):
-                    all_speech_scores.append(event.get('score', 0))
-
-        if all_speech_scores:
-            avg_speech = sum(all_speech_scores) / len(all_speech_scores) * 100
-            max_speech = max(all_speech_scores) * 100
-            max_time = 0
-            for i, time_block in enumerate(behavior_data):
-                for event in time_block.get('events', []):
-                    if 'Speech' in event.get('label', '') and event.get('score', 0) == max(all_speech_scores):
-                        max_time = i * 10
-                        break
-
-            prompt_parts.append(f"- **Speech Activity:** Average {avg_speech:.1f}%, Peak {max_speech:.1f}% at {max_time}-{max_time+10}s")
-
-        # Child voice detection
-        has_child = any(any('Child' in e.get('label', '') or 'Baby' in e.get('label', '') for e in tb.get('events', [])) for tb in behavior_data)
-        prompt_parts.append(f"- **Child Voice:** {'Detected' if has_child else 'Not detected'}")
-
-    # Emotion trend summary - Only if speech detected
-    if has_emotion and not skip_emotion_analysis:
-        primary_emotions = [chunk.get('primary_emotion', {}).get('name_ja', 'Unknown') for chunk in emotion_data]
-        emotion_scores = [chunk.get('primary_emotion', {}).get('score', 0) for chunk in emotion_data]
-
-        avg_score = sum(emotion_scores) / len(emotion_scores)
-        max_score = max(emotion_scores)
-        min_score = min(emotion_scores)
-        max_time = emotion_scores.index(max_score) * 10
-        dominant = max(set(primary_emotions), key=primary_emotions.count)
-
-        prompt_parts.append(f"- **Emotion Trend:** {dominant} (dominant), Range: {min_score:.2f}-{max_score:.2f}, Peak: {max_time}s")
-        prompt_parts.append(f"- **Emotion Timeline:** {' → '.join(primary_emotions)}")
-    elif has_emotion and skip_emotion_analysis:
-        prompt_parts.append(f"- **Emotion Trend:** No speech detected - emotion data skipped for all {len(emotion_data)} segments")
-
-    # Key patterns - Only if emotion data is valid
-    if has_behavior and has_emotion and not skip_emotion_analysis:
-        prompt_parts.append("- **Key Patterns:**")
-
-        # Find peak emotion and corresponding behavior
-        emotion_scores = [chunk.get('primary_emotion', {}).get('score', 0) for chunk in emotion_data]
-        if emotion_scores:
-            peak_idx = emotion_scores.index(max(emotion_scores))
-            peak_emotion = emotion_data[peak_idx].get('primary_emotion', {}).get('name_ja', 'Unknown')
-            peak_events = behavior_data[peak_idx].get('events', []) if peak_idx < len(behavior_data) else []
-            peak_event_labels = [e.get('label', '').split('/')[0].strip() for e in peak_events[:2]]
-
-            prompt_parts.append(f"  - Emotional peak at {peak_idx*10}s ({peak_emotion}: {max(emotion_scores):.2f})")
-            if peak_event_labels:
-                prompt_parts.append(f"  - Concurrent behaviors: {', '.join(peak_event_labels)}")
 
     return "\n".join(prompt_parts)
