@@ -129,26 +129,6 @@ Analyze the following 60-second audio recording and generate a comprehensive psy
     "situation_context": "推測される状況コンテキストと環境要因（日本語）"
   }},
 
-  // ===== Acoustic Metrics =====
-  "acoustic_metrics": {{
-    // Vocal Activity
-    "speech_time_ratio": 0.65,
-    "average_loudness_db": -25.3,
-    "loudness_range": [-45.2, -12.1],
-
-    // Voice Quality
-    "voice_stability_score": 0.82,
-    "pitch_variability": "monotone/normal/expressive",
-    "rhythm_regularity": 0.75,
-
-    // Acoustic Patterns
-    "dominant_patterns": [
-      {{"type": "conversation", "count": 3}},
-      {{"type": "silence", "frequency": "frequent"}},
-      {{"type": "noise", "detected": true}}
-    ]
-  }},
-
   // ===== Key Observations =====
   "key_observations": [
     "録音に関する重要な観察事項（日本語）",
@@ -264,7 +244,11 @@ Analyze the following 60-second audio recording and generate a comprehensive psy
 
     # Determine if emotion data should be filtered based on ASR results
     # Skip emotion analysis if no speech detected in transcription
-    skip_emotion_analysis = not transcription or not transcription.strip() or transcription.strip() == "(No speech detected or transcription failed)"
+    skip_emotion_analysis = (
+        not transcription or
+        not transcription.strip() or
+        transcription.strip() in ["(No speech detected or transcription failed)", "発話なし"]
+    )
 
     if not has_behavior and not has_emotion:
         prompt_parts.append("(No timeline data available)")
