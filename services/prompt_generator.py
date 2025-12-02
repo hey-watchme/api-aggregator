@@ -104,8 +104,34 @@ def generate_spot_prompt(
     prompt_parts.append(f"""# Spot Recording Analysis Task
 
 Analyze the following 60-second audio recording and generate a comprehensive psychological analysis in JSON format.
+""")
 
-# ==================== 2. Output Format & Scoring Guidelines ====================
+    # ==================== 2. Context Information ====================
+    holiday_context_text = ""
+    if holiday_info.get('is_holiday'):
+        holiday_context_text = f"{holiday_info['holiday_name']} "
+    if holiday_info.get('consecutive_context'):
+        holiday_context_text += f"({holiday_info['consecutive_context']})"
+
+    prompt_parts.append(f"""
+# Recording Context
+
+**Temporal Information:**
+- Country: Japan
+- Season: {season}
+- Date: {local_date}
+- Day: {weekday_info['weekday']} ({weekday_info['day_type']}) {holiday_context_text}
+- Local Time: {hour:02d}:{minute:02d} ({time_period})
+- Recorded At (UTC): {recorded_at}
+
+**Subject Information:**
+{generate_age_context(subject_info)}
+
+**Device Context:**
+- Recording device is stationary, placed in the living room
+- Conversations may include family members (not just the subject)
+
+# ==================== 3. Output Format & Guidelines ====================
 
 **Output Format:**
 ```json
@@ -113,28 +139,7 @@ Analyze the following 60-second audio recording and generate a comprehensive psy
   // ===== Core Information =====
   "summary": "対象者の状況と心理状態を2-3文で日本語で説明（例：朝食の時間。家族と一緒に食事をしている。）",
   "vibe_score": -36,
-  "behavior": "検出された主要な行動パターン3つ（カンマ区切り、会話が含まれる場合は必ず「会話」を含める）（例：会話, 食事, 家族団らん）",
-
-  // ===== Psychological Analysis =====
-  "psychological_analysis": {{
-    "mood_state": "neutral/positive/negative/anxious/relaxed/excited/tired",
-    "mood_description": "現在の心理状態の詳細な説明（日本語）",
-    "emotion_changes": "感情の変化や安定パターンの説明（日本語）"
-  }},
-
-  // ===== Behavioral Analysis =====
-  "behavioral_analysis": {{
-    "detected_activities": ["conversation", "walking", "outdoor"],
-    "behavior_pattern": "全体的な行動パターンと日常活動の文脈（日本語）",
-    "situation_context": "推測される状況コンテキストと環境要因（日本語）"
-  }},
-
-  // ===== Key Observations =====
-  "key_observations": [
-    "録音に関する重要な観察事項（日本語）",
-    "タイミングや文脈に関する観察（日本語）",
-    "検出されたパターンに関する観察（日本語）"
-  ]
+  "behavior": "検出された主要な行動パターン3つ（カンマ区切り、会話が含まれる場合は必ず「会話」を含める）（例：会話, 食事, 家族団らん）"
 }}
 ```
 
@@ -142,27 +147,17 @@ Analyze the following 60-second audio recording and generate a comprehensive psy
 - Output must be valid JSON (no trailing commas)
 - All fields are required
 - vibe_score must be integer between -100 and +100
-- **All text fields (summary, mood_description, behavior_pattern, etc.) must be in Japanese**
+- **summary field must be in Japanese (2-3 sentences describing the subject's situation and psychological state)**
 - **behavior field must contain exactly 3 key behaviors separated by commas (例: 会話, 食事, 家族団らん)**
 - **If conversation/speech is detected in SED data, "会話" MUST be included in behavior field**
 - JSON comments (// ...) are for documentation only - do not include in output
 
-# ==================== 3. Subject Information & Contextual Guidelines ====================
-
-**Subject Profile:**
-{generate_age_context(subject_info)}
-
 **Analysis Guidelines:**
-- If subject information is unavailable, avoid making age-specific assumptions
 - Consider cultural and seasonal context when interpreting behaviors
 - Time-of-day patterns: morning activities differ from evening routines
 - Focus on observable patterns rather than speculative interpretations
-
-**Special Considerations for This Time Period:**
-1. First Priority: Determine if this is a conversation or solo activity
-2. Second Priority: Assess environmental sounds and situational context
-
-**Behavioral Pattern Interpretation:**
+- First Priority: Determine if this is a conversation or solo activity
+- Second Priority: Assess environmental sounds and situational context
 - Consistent high-confidence speech detection suggests active conversation
 - Mixed activity signals may indicate environmental sounds or background noise
 - Silence periods should be interpreted contextually (not always negative)
@@ -194,40 +189,7 @@ Analyze the following 60-second audio recording and generate a comprehensive psy
 - rhythm_regularity: Speech rhythm consistency (0.0-1.0) - higher means more regular patterns
 """)
 
-    # ==================== 5. Context Information ====================
-    holiday_context_text = ""
-    if holiday_info.get('is_holiday'):
-        holiday_context_text = f"{holiday_info['holiday_name']} "
-    if holiday_info.get('consecutive_context'):
-        holiday_context_text += f"({holiday_info['consecutive_context']})"
-
-    prompt_parts.append(f"""
-# Temporal Context
-- Country: Japan
-- Season: {season}
-- Date: {local_date}
-- Day: {weekday_info['weekday']} ({weekday_info['day_type']}) {holiday_context_text}
-- Local Time: {hour:02d}:{minute:02d} ({time_period})
-- Recorded At (UTC): {recorded_at}
-""")
-
-    # Add subject information if available
-    if subject_info:
-        subject_parts = []
-        if subject_info.get('name'):
-            subject_parts.append(f"Name: {subject_info['name']}")
-        if subject_info.get('age') is not None:
-            subject_parts.append(f"Age: {subject_info['age']}s")
-        if subject_info.get('gender'):
-            subject_parts.append(f"Gender: {subject_info['gender']}")
-        if subject_info.get('notes'):
-            subject_parts.append(f"Notes: {subject_info['notes']}")
-
-        prompt_parts.append("- Subject: " + ", ".join(subject_parts) + "\n")
-    else:
-        prompt_parts.append("- Subject: Information unavailable\n")
-
-    # ==================== 6. Full Transcription ====================
+    # ==================== 5. Full Transcription ====================
     prompt_parts.append("\n# Full Transcription (60 seconds)\n")
 
     if transcription and transcription.strip():
@@ -235,7 +197,7 @@ Analyze the following 60-second audio recording and generate a comprehensive psy
     else:
         prompt_parts.append("(No speech detected or transcription failed)\n")
 
-    # ==================== 7. Acoustic & Emotional Timeline ====================
+    # ==================== 6. Acoustic & Emotional Timeline ====================
     prompt_parts.append("\n# Acoustic & Emotional Timeline (10-second synchronized analysis)\n")
 
     # Check data availability
@@ -338,7 +300,7 @@ Analyze the following 60-second audio recording and generate a comprehensive psy
 
             prompt_parts.append("\n---\n")  # Separator between blocks
 
-    # ==================== 8. Overall Summary ====================
+    # ==================== 7. Overall Summary ====================
     prompt_parts.append("\n# Overall Summary\n")
 
     # Duration
