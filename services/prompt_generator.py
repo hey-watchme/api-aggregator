@@ -111,7 +111,6 @@ Analyze the following 60-second audio recording and generate a comprehensive psy
 ```json
 {{
   // ===== Core Information =====
-  "recorded_at": "{recorded_at}",
   "summary": "対象者の状況と心理状態を2-3文で日本語で説明（例：朝食の時間。家族と一緒に食事をしている。）",
   "vibe_score": -36,
   "behavior": "検出された主要な行動パターン3つ（カンマ区切り、会話が含まれる場合は必ず「会話」を含める）（例：会話, 食事, 家族団らん）",
