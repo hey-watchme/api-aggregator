@@ -170,6 +170,12 @@ Analyze the following {duration}-second audio recording and generate a comprehen
 
 # ==================== 4. Vibe Score Calculation Guidelines ====================
 
+**Core Principle:**
+Base your Vibe Score on the **Summary** and **Behavior** you generated, which should integrate:
+1. **Conversation content (ASR)** - PRIMARY SOURCE (最優先)
+2. **Acoustic events (SED)** - RELIABLE CONTEXT (会話を補完・状況理解)
+3. **Emotion scores (SER)** - MINOR ADJUSTMENT ONLY (精度低い・参考程度)
+
 **Vibe Score Range:**
 - **Integer between -100 and +100 (REQUIRED)**
 - Score Ranges:
@@ -179,20 +185,117 @@ Analyze the following {duration}-second audio recording and generate a comprehen
   * Negative: -60 to -20
   * Highly negative: -100 to -60
 
-**Scoring Factors (Subject-Specific - Age Unknown):**
-- Active social interaction: +10 to +20 points (social engagement)
-- Detected silence/isolation: -10 to -30 (varies by context and time of day)
-- Loud noise/disturbance: -5 to -15 (environmental stress)
-- Regular activity patterns: +15 to +25
-- High activity diversity: +20 to +30 (varies by context)
-- Low activity diversity: -20 to -30 (monotonous environment)
+---
 
-**Acoustic Metric Guidelines:**
-- speech_time_ratio: Proportion of speech in recording (0.0-1.0) - 0.7+ is high, 0.3- is low
-- average_loudness_db: Average volume in dB (typically -30 to -20 dB)
-- voice_stability_score: Voice quality stability (0.0-1.0) - 0.8+ is stable, 0.5- is unstable
-- pitch_variability: Voice expressiveness (monotone=flat, normal=moderate, expressive=dynamic)
-- rhythm_regularity: Speech rhythm consistency (0.0-1.0) - higher means more regular patterns
+## Scoring Process
+
+### Step 1: Generate Summary Using ASR + SED
+
+**Summary should reflect:**
+- What is being said (conversation content from ASR)
+- What is happening (activities detected by SED)
+- Overall situation combining both sources
+
+**SED enhances understanding:**
+- Speech → confirms active conversation
+- Sizzle, Frying → reveals cooking activity (may not be mentioned in words)
+- Music, TV → background entertainment
+- Laughter → positive atmosphere (even if not captured in transcription)
+- Crying, Screaming → distress (even if words are unclear)
+
+**Example:**
+- ASR: "足の裏が痛い。ピーマン食べてみる。"
+- SED: Sizzle, Frying, Speech
+- Summary: "料理中。足が痛いと訴えているが、新しい野菜に挑戦している。家族との会話が続いている。"
+
+---
+
+### Step 2: Determine Base Score from Summary (-60 to +60)
+
+Read your Summary and ask: "What is the overall situation?"
+
+**Highly Positive (40-60):**
+- Joyful family interactions (楽しい遊び、笑い声、ポジティブな会話)
+- Learning/discovery moments (新しい挑戦、成功体験、褒められる)
+- Active positive engagement (協力して料理、一緒にゲーム)
+
+**Positive (20-40):**
+- Regular positive activities (日常的な会話、食事、遊び)
+- Calm family time (穏やかな団らん、一緒にTV視聴)
+- Engaged activities (YouTube視聴中のコメント、料理の手伝い)
+
+**Neutral (-20 to +20):**
+- Routine activities without emotional tone (移動中、静かな時間)
+- Background conversations (内容不明瞭、雑談)
+- Passive activities (TV/音楽を聴いているだけ)
+
+**Negative (-40 to -20):**
+- Minor discomfort or complaints (痛い、疲れた、イヤだ)
+- Mild conflicts (注意される、小言を言われる)
+- Frustration (うまくいかない、飽きた)
+
+**Highly Negative (-60 to -40):**
+- Intense distress (激しく泣く、パニック、怒鳴る)
+- Serious conflicts (大きな喧嘩、強く叱られる)
+- Clear suffering (強い痛み、恐怖、助けを求める)
+
+---
+
+### Step 3: Contextual Adjustments (-20 to +20)
+
+**A. Time-of-Day Context (-15 to +10)**
+
+Age-appropriate timing matters:
+- **Appropriate activity for time**: 0 to +10
+  * Morning (6:00-9:00): Breakfast, getting ready → +5
+  * Daytime (9:00-17:00): Active play, learning → +10
+  * Evening (17:00-20:00): Dinner, family time → +5
+  * Night (20:00-22:00): Calm activities, bedtime routine → 0
+
+- **Inappropriate timing** (especially for young children): -10 to -15
+  * Late night (22:00-6:00): Should be sleeping → -10 to -15
+  * Missing meal times: Unusual absence → -5
+
+**B. Conversation Engagement (-15 to +10)**
+
+Based on both ASR and SED:
+- **Active conversation** (ASR content + Speech 0.5+): +5 to +10
+  * Rich conversation content + high Speech confidence → +10
+  * Brief conversation + medium Speech confidence → +5
+
+- **Activity sounds without speech** (SED only): 0 to +5
+  * Cooking, playing, movement sounds → +5 (engaged in activity)
+  * TV, Music only → 0 (passive consumption)
+
+- **Complete silence** (no ASR, no SED): -10 to -15
+  * Likely absent or outside → -15
+  * Possible nap time (if appropriate hour) → -5
+
+---
+
+### Step 4: Emotion Data (SER) - Fine-Tuning Only (-10 to +10)
+
+**⚠️ Use with caution - SER has high false positive rate**
+
+Only apply if emotion data aligns with Summary:
+- **Emotion supports Summary**: -10 to +10
+  * Summary is positive AND Joy score is high (3.0+) → +5 to +10
+  * Summary is negative AND Anger/Sadness score is high → -5 to -10
+
+- **Emotion contradicts Summary**: IGNORE emotion data
+  * Example: Fun conversation but Anger score is high → Trust Summary, ignore SER
+  * Example: Complaint in words but Joy score is high → Trust ASR, ignore SER
+
+**Default behavior**: If uncertain, do NOT use SER data at all (0 adjustment)
+
+---
+
+## Key Reminders
+
+1. **ASR (conversation) is your primary source** - understand what is being said
+2. **SED (acoustic events) enriches context** - reveals activities not in words
+3. **SER (emotion) is secondary** - only use if it clearly supports Summary
+4. **Trust your Summary over raw data** - if they conflict, trust your interpretation
 """)
 
     # ==================== 5. Full Transcription ====================
