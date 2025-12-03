@@ -109,10 +109,55 @@ def generate_spot_prompt(
     # ==================== 1. Task Definition ====================
     prompt_parts.append(f"""# Spot Recording Analysis Task
 
-Analyze the following {duration}-second audio recording and generate a comprehensive psychological analysis in JSON format.
+You are a professional counselor observing a client through brief audio recordings. Your role is to:
+1. **Understand what happened in THIS specific recording** (not the person's general profile)
+2. **Describe the situation and emotional state based on observable evidence**
+3. **Provide objective assessment of their psychological well-being at this moment**
+
+Think of this as writing a brief session note after listening to a {duration}-second recording.
+Focus on: What did they say? What was happening around them? How did they seem to feel?
+
+Your task: Analyze this recording and generate a psychological analysis in JSON format.
 """)
 
-    # ==================== 2. Context Information ====================
+    # ==================== 2. Output Format & Guidelines ====================
+    prompt_parts.append("""
+# Output Format
+
+**Required JSON structure:**
+```json
+{
+  "summary": "この録音で観察されたことを2-3文で記述（日本語）",
+  "vibe_score": -36,
+  "behavior": "検出された主要な行動パターン3つ（カンマ区切り）"
+}
+```
+
+**How to write an effective summary:**
+Your summary should be like a counselor's session note - describe what happened in THIS recording.
+
+Focus on:
+- What was said in the conversation (specific topics, complaints, requests)
+- What activities were happening (cooking, playing, watching TV, eating)
+- Emotional atmosphere (joyful, calm, frustrated, uncomfortable)
+
+**Examples of effective summaries:**
+- "夕食の準備中。ピーマンを食べてみようとしている。足の裏が痛いと訴えている。"
+- "YouTubeを見ながら笑っている。Minecraftの動画について家族に説明している。"
+- "リビングで静かに過ごしている。会話は検出されない。背景に料理の音。"
+- "宿題について話している。やりたくないと訴えている。母親と交渉中。"
+
+**Important Notes:**
+- Output must be valid JSON (no trailing commas)
+- All fields are required
+- vibe_score must be integer between -100 and +100
+- summary: 2-3 sentences in Japanese describing what happened in THIS recording
+- behavior: exactly 3 key behaviors separated by commas (例: 会話, 食事, 家族団らん)
+- If conversation/speech is detected in SED data, "会話" MUST be included in behavior field
+- JSON comments are for documentation only - do not include in output
+""")
+
+    # ==================== 3. Recording Context ====================
     holiday_context_text = ""
     if holiday_info.get('is_holiday'):
         holiday_context_text = f"{holiday_info['holiday_name']} "
@@ -130,33 +175,14 @@ Analyze the following {duration}-second audio recording and generate a comprehen
 - Day: {weekday_info['weekday']} ({weekday_info['day_type']}) {holiday_context_text}
 - Local Time: {hour:02d}:{minute:02d} ({time_period})
 
-**Subject Information:**
+**Client Background (for context):**
 {generate_age_context(subject_info)}
 
 **Device Context:**
 - Recording device is stationary, placed in the living room
-- Conversations may include family members (not just the subject)
+- Conversations may include family members (not just the client)
 
-# ==================== 3. Output Format & Guidelines ====================
-
-**Output Format:**
-```json
-{{
-  // ===== Core Information =====
-  "summary": "対象者の状況と心理状態を2-3文で日本語で説明（例：朝食の時間。家族と一緒に食事をしている。）",
-  "vibe_score": -36,
-  "behavior": "検出された主要な行動パターン3つ（カンマ区切り、会話が含まれる場合は必ず「会話」を含める）（例：会話, 食事, 家族団らん）"
-}}
-```
-
-**Important Notes:**
-- Output must be valid JSON (no trailing commas)
-- All fields are required
-- vibe_score must be integer between -100 and +100
-- **summary field must be in Japanese (2-3 sentences describing the subject's situation and psychological state)**
-- **behavior field must contain exactly 3 key behaviors separated by commas (例: 会話, 食事, 家族団らん)**
-- **If conversation/speech is detected in SED data, "会話" MUST be included in behavior field**
-- JSON comments (// ...) are for documentation only - do not include in output
+*Note: This background helps you understand the context, but your summary should focus on what happened in THIS recording.*
 
 **Analysis Guidelines:**
 - Consider cultural and seasonal context when interpreting behaviors
