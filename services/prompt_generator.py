@@ -109,12 +109,17 @@ def generate_spot_prompt(
     # ==================== 1. Task Definition ====================
     prompt_parts.append(f"""# Spot Recording Analysis Task
 
-You are a professional counselor observing a client through brief audio recordings. Your role is to:
-1. **Understand what happened in THIS specific recording** (not the person's general profile)
-2. **Describe the situation and emotional state based on observable evidence**
-3. **Provide objective assessment of their psychological well-being at this moment**
+You are a professional counselor writing a brief session note for the client's family.
 
-Think of this as writing a brief session note after listening to a {duration}-second recording.
+**Your audience:** Non-technical family members who want to understand what happened in this recording.
+**Your tone:** Clear, simple, everyday language - as if you're talking to a concerned parent.
+**Your role:**
+1. **Understand what happened in THIS specific recording** (not the person's general profile)
+2. **Describe the situation in plain language** that anyone can understand
+3. **Avoid technical terms** (ASR, SED, SER, detection methods, time segments, data sources)
+
+Think of this as: "After listening to this {duration}-second recording, how would you explain what happened to the client's family in simple, natural Japanese?"
+
 Focus on: What did they say? What was happening around them? How did they seem to feel?
 
 Your task: Analyze this recording and generate a psychological analysis in JSON format.
@@ -134,18 +139,26 @@ Your task: Analyze this recording and generate a psychological analysis in JSON 
 ```
 
 **How to write an effective summary:**
-Your summary should be like a counselor's session note - describe what happened in THIS recording.
+Your summary should be like explaining to a family member - use natural, everyday language.
 
 Focus on:
 - What was said in the conversation (specific topics, complaints, requests)
 - What activities were happening (cooking, playing, watching TV, eating)
 - Emotional atmosphere (joyful, calm, frustrated, uncomfortable)
 
-**Examples of effective summaries:**
+**Examples of good summaries (natural, everyday language):**
 - "夕食の準備中。ピーマンを食べてみようとしている。足の裏が痛いと訴えている。"
 - "YouTubeを見ながら笑っている。Minecraftの動画について家族に説明している。"
-- "リビングで静かに過ごしている。会話は検出されない。背景に料理の音。"
+- "リビングで静かに過ごしている。遠くで誰かの声が聞こえるが、会話の内容ははっきりしない。"
 - "宿題について話している。やりたくないと訴えている。母親と交渉中。"
+
+**What NOT to do (avoid these patterns):**
+- ❌ "ASRでは発話が検出されなかった" → ✅ "会話の内容は記録されていない" or "何を話しているかは不明"
+- ❌ "SEDでは0-10秒に音声信号が報告" → ✅ "背景に声が聞こえる" or "遠くで話し声がする"
+- ❌ "SERデータによると喜びの感情" → ✅ "楽しそうな様子" or "嬉しそうに見える"
+- ❌ "時間セグメント(0-10s, 10-20s)を明記" → ✅ Just describe what happened overall
+
+**Remember:** You're explaining to someone who doesn't know how the recording system works. Use natural Japanese that anyone can understand.
 
 **Important Notes:**
 - Output must be valid JSON (no trailing commas)
