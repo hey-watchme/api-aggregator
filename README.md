@@ -107,7 +107,15 @@
 **Summary-Based Scoring（Summaryから逆算）**:
 1. Summaryの内容を読んで基礎スコア決定（-60〜+60）
 2. 時間帯・会話エンゲージメントで補正（-20〜+20）
-3. SERで微調整（-10〜+10、矛盾時は無視）
+3. SER（感情スコア）で段階的調整（-15〜+15）
+   - Strong signals (≥4.0): 必ず参考（±10〜±15）
+   - Moderate signals (2.0-4.0): Summaryと一致すれば使用（±5〜±10）
+   - Weak signals (<2.0): 無視
+
+**特別処理**:
+- "発話なし" + SED Speech検出 = 会話はあったが内容不明と解釈
+- Base +5〜+10に設定（完全な沈黙ではない）
+- SERが強ければ追加ボーナス
 
 **スコアレンジ**:
 - Highly Positive (40-60): 楽しい遊び、学習、褒められる
@@ -116,17 +124,30 @@
 - Negative (-40 to -20): 不満、軽い衝突、不快感
 - Highly Negative (-60 to -40): 激しい泣き、喧嘩、苦痛
 
+**計算例**:
+```
+発話なし + Speech 0.75 + Joy 4.6
+= 8 (base) + 5 (time) + 10 (speech) + 12 (joy)
+= 35
+```
+
 ### プロンプト構造例
 
 ```markdown
 # Spot Recording Analysis Task
-You are a professional counselor observing a client through brief audio recordings.
-Think of this as writing a brief session note...
+You are a professional counselor writing a brief session note for the client's family.
+Your audience: Non-technical family members
+Your tone: Clear, simple, everyday language
+Avoid: ASR, SED, SER, detection methods, time segments
 
 # Output Format
-**Examples of effective summaries:**
+**Good examples (natural language):**
 - "夕食の準備中。ピーマンを食べてみようとしている。足の裏が痛いと訴えている。"
-- "YouTubeを見ながら笑っている。Minecraftの動画について家族に説明している。"
+- "リビングで静かに過ごしている。遠くで誰かの声が聞こえるが、会話の内容ははっきりしない。"
+
+**What NOT to do:**
+- ❌ "ASRでは発話が検出されなかった"
+- ❌ "SEDでは0-10秒に音声信号が報告"
 
 # Recording Context
 **Temporal Information:** Duration, Date, Time, Season
@@ -134,7 +155,7 @@ Think of this as writing a brief session note...
 **Device Context:** Stationary device in living room
 
 # Vibe Score Calculation Guidelines
-(4-step scoring process based on Summary)
+(4-step scoring with SER gradual use)
 
 # Full Transcription
 ちしても良くないけどもしばんなどんばい...
