@@ -69,52 +69,81 @@
 
 ---
 
-## 🎯 新プロンプトフォーマット（Timeline-Synchronized）
+## 🎯 プロンプトフォーマット
+
+### 設計思想
+
+**Summary-Based Approach（会話内容理解優先）**:
+- カウンセラーロール設定により、プロフィール情報の重複を回避
+- ASR（会話内容）を最優先データソースとして位置づけ
+- SED（音響イベント）で会話内容を補完
+- SER（感情スコア）は精度が低いため補助的に使用
+
+### データ優先順位
+
+1. **ASR (Transcription)**: PRIMARY SOURCE - 最も信頼できる会話内容
+2. **SED (Sound Event Detection)**: RELIABLE CONTEXT - 会話を補完する音響イベント
+3. **SER (Speech Emotion Recognition)**: MINOR ADJUSTMENT - 精度低い・参考程度
 
 ### 主な特徴
 
-1. **Full Transcription（全文）**: 時系列なし、全体で1つのテキスト
-2. **Timeline（10秒ごと同期）**: SED（音響イベント）+ SER（感情）を同じ時間軸で表示
-3. **Pattern Detection**: 自動的に「笑い声 + 喜び」「衝突音 + 怒り」などを検出
-4. **Overall Summary**: 統計情報とキーパターン
+1. **Counselor Role（カウンセラーロール）**: セッションノートを書くように、THIS recordingに焦点
+2. **Full Transcription（全文）**: 時系列なし、会話内容をそのまま提示
+3. **Timeline（10秒ごと同期）**: SED（音響イベント）+ SER（感情）を同じ時間軸で表示
+4. **Pattern Detection**: 自動的に「笑い声 + 喜び」「衝突音 + 怒り」などを検出
+
+### 出力フォーマット
+
+```json
+{
+  "summary": "この録音で観察されたことを2-3文で記述（日本語）",
+  "vibe_score": 45,
+  "behavior": "会話, 食事, 家族団らん"
+}
+```
+
+### Vibe Score計算方式
+
+**Summary-Based Scoring（Summaryから逆算）**:
+1. Summaryの内容を読んで基礎スコア決定（-60〜+60）
+2. 時間帯・会話エンゲージメントで補正（-20〜+20）
+3. SERで微調整（-10〜+10、矛盾時は無視）
+
+**スコアレンジ**:
+- Highly Positive (40-60): 楽しい遊び、学習、褒められる
+- Positive (20-40): 日常的な会話、食事、穏やかな時間
+- Neutral (-20 to +20): 背景会話、受動的活動
+- Negative (-40 to -20): 不満、軽い衝突、不快感
+- Highly Negative (-60 to -40): 激しい泣き、喧嘩、苦痛
 
 ### プロンプト構造例
 
 ```markdown
-# Full Transcription (60 seconds)
+# Spot Recording Analysis Task
+You are a professional counselor observing a client through brief audio recordings.
+Think of this as writing a brief session note...
+
+# Output Format
+**Examples of effective summaries:**
+- "夕食の準備中。ピーマンを食べてみようとしている。足の裏が痛いと訴えている。"
+- "YouTubeを見ながら笑っている。Minecraftの動画について家族に説明している。"
+
+# Recording Context
+**Temporal Information:** Duration, Date, Time, Season
+**Client Background (for context):** Age, Gender, Notes
+**Device Context:** Stationary device in living room
+
+# Vibe Score Calculation Guidelines
+(4-step scoring process based on Summary)
+
+# Full Transcription
 ちしても良くないけどもしばんなどんばい...
 
 # Acoustic & Emotional Timeline (10-second synchronized analysis)
-
 ## 0-10秒
-**Behavior Analysis (SED):**
-  - Speech / 会話・発話: 76.5% (high confidence)
-  - Child speech / 子供の声: 15.7% (low confidence)
-
-**Emotion Analysis (SER):**
-  - Primary: 喜び (Score: 3.46)
-  - All emotions: 喜び(3.46), 中立(0.81), 悲しみ(-1.17), 怒り(-2.45)
-
+**Behavior Analysis (SED):** Speech 76.5%
+**Emotion Analysis (SER):** Primary: 喜び (3.46)
 **Pattern:** 会話中、喜びの感情
-
----
-
-## 10-20秒
-**Behavior Analysis (SED):**
-  - Speech / 会話・発話: 55.8% (medium confidence)
-
-**Emotion Analysis (SER):**
-  - Primary: 喜び (Score: 5.19)  ← 感情が高揚
-
-**Pattern:** 会話中、喜びの感情
-
----
-
-# Overall Summary
-- **Duration:** 60 seconds
-- **Speech Activity:** Average 71.1%, Peak 86.4% at 40-50s
-- **Emotion Trend:** 喜び (dominant), Range: 2.70-5.19, Peak: 10s
-- **Emotion Timeline:** 喜び → 喜び → 喜び → 喜び → 喜び → 喜び
 ```
 
 ### 時系列保持の効果
@@ -392,69 +421,6 @@ cat /home/ubuntu/aggregator/.env
 
 ---
 
-## 変更履歴
-
-### 2025-11-13 - Japanese Output + Behavior Field 🎉
-
-**目的**: ダッシュボード表示用に日本語出力とbehaviorフィールドを追加
-
-**変更内容**:
-1. **出力を日本語化**
-   - `summary`: 日本語で2-3文の説明（例：朝食の時間。家族と一緒に食事をしている。）
-   - `mood_description`: 現在の心理状態の詳細な説明（日本語）
-   - `behavior_pattern`: 全体的な行動パターン（日本語）
-   - `situation_context`: 推測される状況コンテキスト（日本語）
-   - `emotion_changes`: 感情の変化や安定パターン（日本語）
-   - `key_observations`: 重要な観察事項（日本語配列）
-
-2. **behaviorフィールド追加**
-   - 検出された主要な行動パターン3つ（カンマ区切り）
-   - 例：`"会話, 食事, 家族団らん"`
-   - **会話が検出された場合、必ず「会話」を含める**
-   - ダッシュボード表示用の簡潔な行動タグ
-
-**プロンプト設計**:
-- プロンプト自体は英語（LLM効率のため）
-- 出力フォーマットで日本語を明示的に指定
-
-**効果**:
-- iOSアプリ・Webダッシュボードで直接表示可能
-- ユーザーフレンドリーな日本語説明
-- 行動パターンの視覚化が容易
-
-**修正ファイル**:
-- `services/prompt_generator.py`: 出力フォーマット修正
-
----
-
-### 2025-11-12 - Timeline-Synchronized Format 🎉
-
-**目的**: 時系列の文脈を保持し、LLM分析の精度向上
-
-**変更内容**:
-1. **プロンプト形式を全面刷新**
-   - 旧: ASR/SED/SERが別々のセクション
-   - 新: 10秒ごとにSED+SERを同期表示（タイムライン型）
-
-2. **技術名の汎用化**
-   - SED (Sound Event Detection)
-   - SER (Speech Emotion Recognition)
-
-3. **パターン検出機能追加**
-   - 自動的に「笑い声 + 喜び」「衝突音 + 怒り」を検出
-   - LLMが時間軸で感情と行動の相関を理解可能
-
-**効果**:
-- 「怒って物を投げた」のような複雑なシーンを正確に分析可能
-- 感情の変化（喜び→怒り→悲しみ）を時系列で追跡
-- プロンプト長: 5000文字 → 4000文字（20%削減）
-
-**修正ファイル**:
-- `services/prompt_generator.py`: 全面書き換え
-- `services/data_fetcher.py`: データ構造の修正
-
----
-
 ## 📅 Weekly Aggregator ✅ (試験段階)
 
 ### 概要
@@ -623,5 +589,5 @@ CREATE TABLE weekly_aggregators (
 
 ---
 
-**最終更新**: 2025-11-19
+**最終更新**: 2025-12-03
 **ステータス**: ✅ 本番稼働中（Spot + Daily）、試験段階（Weekly）
