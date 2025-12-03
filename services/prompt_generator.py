@@ -302,6 +302,12 @@ Based on both ASR and SED:
   * Rich conversation content + high Speech confidence → +10
   * Brief conversation + medium Speech confidence → +5
 
+- **Special Case: No transcription but Speech detected** (ASR says "発話なし" but SED detects Speech): +5 to +15
+  * This means: Conversation happened but content was unclear/not captured
+  * NOT: Complete silence
+  * Base: +5 to +10 (activity detected)
+  * Can add SER bonus if strong signals (see Step 4)
+
 - **Activity sounds without speech** (SED only): 0 to +5
   * Cooking, playing, movement sounds → +5 (engaged in activity)
   * TV, Music only → 0 (passive consumption)
@@ -312,20 +318,34 @@ Based on both ASR and SED:
 
 ---
 
-### Step 4: Emotion Data (SER) - Fine-Tuning Only (-10 to +10)
+### Step 4: Emotion Data (SER) - Reference Information (-15 to +15)
 
-**⚠️ Use with caution - SER has high false positive rate**
+**⚠️ Use with caution - SER has moderate accuracy**
 
-Only apply if emotion data aligns with Summary:
-- **Emotion supports Summary**: -10 to +10
-  * Summary is positive AND Joy score is high (3.0+) → +5 to +10
-  * Summary is negative AND Anger/Sadness score is high → -5 to -10
+**When to use SER data:**
 
-- **Emotion contradicts Summary**: IGNORE emotion data
-  * Example: Fun conversation but Anger score is high → Trust Summary, ignore SER
-  * Example: Complaint in words but Joy score is high → Trust ASR, ignore SER
+1. **Strong emotion signals (score ≥ 4.0)** - Use as important reference:
+   - Joy ≥ 4.0 → Add +10 to +15 points (positive atmosphere detected)
+   - Anger ≥ 4.0 → Subtract -10 to -15 points (negative atmosphere detected)
+   - Sadness ≥ 4.0 → Subtract -10 to -15 points (distress detected)
 
-**Default behavior**: If uncertain, do NOT use SER data at all (0 adjustment)
+2. **Moderate emotion signals (2.0 - 4.0)** - Use if it aligns with Summary:
+   - If Summary is already positive AND Joy 2.0-4.0 → Add +5 to +10
+   - If Summary is already negative AND Anger/Sadness 2.0-4.0 → Subtract -5 to -10
+
+3. **Weak signals (< 2.0) or contradicts Summary** - IGNORE
+
+**Example scenario:**
+- Transcription: "発話なし"
+- SED: Speech detected (0.75)
+- SER: Joy 4.6 (strong signal)
+- Summary: "リビングで話し声が聞こえる。楽しそうな雰囲気。"
+- Scoring:
+  * Base: +8 (neutral positive situation)
+  * Time: +5 (appropriate evening time)
+  * Speech detected: +10 (conversation happening)
+  * SER Joy 4.6: +12 (strong positive atmosphere)
+  * Final: 8 + 5 + 10 + 12 = 35
 
 ---
 
