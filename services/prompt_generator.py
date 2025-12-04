@@ -134,7 +134,8 @@ Your task: Analyze this recording and generate a psychological analysis in JSON 
 {
   "summary": "この録音で観察されたことを2-3文で記述（日本語）",
   "vibe_score": -36,
-  "behavior": "検出された主要な行動パターン3つ（カンマ区切り）"
+  "behavior": "検出された主要な行動パターン3つ（カンマ区切り）",
+  "emotion": "最も有意な感情1-2個（カンマ区切り）"
 }
 ```
 
@@ -157,7 +158,9 @@ Focus on:
 - All fields are required
 - summary: 2-3 sentences in Japanese describing what happened in THIS recording
 - behavior: exactly 3 key behaviors separated by commas (例: 会話, 食事, 家族団らん)
+- emotion: 1-2 most significant emotions from SER data (例: 喜び, 中立)
 - If conversation/speech is detected in SED data, "会話" MUST be included in behavior field
+- emotion field should use name_ja from SER data (喜び, 中立, 怒り, 悲しみ)
 - JSON comments are for documentation only - do not include in output
 """)
 
@@ -310,6 +313,14 @@ Based on your Summary, assign a score (-100 to +100):
 - Time-of-day context (appropriate activities add points; late night for children subtracts points)
 - Conversation engagement (active conversation adds points; silence subtracts points)
 - Strong emotion signals (≥4.0) can adjust score by ±10-15 points; weak signals (<2.0) should be ignored
+
+**Step 3: Extract Significant Emotions**
+Based on the Emotion Analysis (SER) timeline:
+- Identify the 1-2 emotions with the highest average scores across all time blocks
+- Use the name_ja field (喜び, 中立, 怒り, 悲しみ)
+- If no speech detected, use "中立" as default
+- Priority: Primary emotions with score ≥ 2.0
+- Example output: "喜び, 中立" or "中立"
 """)
 
     return "\n".join(prompt_parts)
