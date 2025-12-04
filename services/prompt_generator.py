@@ -190,10 +190,7 @@ Focus on:
 
 **Client Background (for context):**
 {generate_age_context(subject_info)}
-
-**Device Context:**
-- Recording device is stationary, placed in the living room
-- Conversations may include family members (not just the client)
+*Note: Recordings may include voices of family members or others nearby, not just the client.*
 
 *Note: This background helps you understand the context, but your summary should focus on what happened in THIS recording.*
 
