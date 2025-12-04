@@ -152,18 +152,9 @@ Focus on:
 - "リビングで静かに過ごしている。遠くで誰かの声が聞こえるが、会話の内容ははっきりしない。"
 - "宿題について話している。やりたくないと訴えている。母親と交渉中。"
 
-**What NOT to do (avoid these patterns):**
-- ❌ "ASRでは発話が検出されなかった" → ✅ "会話の内容は記録されていない" or "何を話しているかは不明"
-- ❌ "SEDでは0-10秒に音声信号が報告" → ✅ "背景に声が聞こえる" or "遠くで話し声がする"
-- ❌ "SERデータによると喜びの感情" → ✅ "楽しそうな様子" or "嬉しそうに見える"
-- ❌ "時間セグメント(0-10s, 10-20s)を明記" → ✅ Just describe what happened overall
-
-**Remember:** You're explaining to someone who doesn't know how the recording system works. Use natural Japanese that anyone can understand.
-
 **Important Notes:**
 - Output must be valid JSON (no trailing commas)
 - All fields are required
-- vibe_score must be integer between -100 and +100
 - summary: 2-3 sentences in Japanese describing what happened in THIS recording
 - behavior: exactly 3 key behaviors separated by commas (例: 会話, 食事, 家族団らん)
 - If conversation/speech is detected in SED data, "会話" MUST be included in behavior field
@@ -191,170 +182,9 @@ Focus on:
 **Client Background (for context):**
 {generate_age_context(subject_info)}
 *Note: Recordings may include voices of family members or others nearby, not just the client.*
-
-*Note: This background helps you understand the context, but your summary should focus on what happened in THIS recording.*
-
-**Analysis Guidelines:**
-- Consider cultural and seasonal context when interpreting behaviors
-- Time-of-day patterns: morning activities differ from evening routines
-- Focus on observable patterns rather than speculative interpretations
-- First Priority: Determine if this is a conversation or solo activity
-- Second Priority: Assess environmental sounds and situational context
-- Consistent high-confidence speech detection suggests active conversation
-- Mixed activity signals may indicate environmental sounds or background noise
-- Silence periods should be interpreted contextually (not always negative)
-
-# ==================== 4. Vibe Score Calculation Guidelines ====================
-
-**Core Principle:**
-Base your Vibe Score on the **Summary** and **Behavior** you generated, which should integrate:
-1. **Conversation content (ASR)** - PRIMARY SOURCE (最優先)
-2. **Acoustic events (SED)** - RELIABLE CONTEXT (会話を補完・状況理解)
-3. **Emotion scores (SER)** - MINOR ADJUSTMENT ONLY (精度低い・参考程度)
-
-**Vibe Score Range:**
-- **Integer between -100 and +100 (REQUIRED)**
-- Score Ranges:
-  * Highly positive: 60-100
-  * Positive: 20-60
-  * Neutral: -20 to 20
-  * Negative: -60 to -20
-  * Highly negative: -100 to -60
-
----
-
-## Scoring Process
-
-### Step 1: Generate Summary Using ASR + SED
-
-**Summary should reflect:**
-- What is being said (conversation content from ASR)
-- What is happening (activities detected by SED)
-- Overall situation combining both sources
-
-**SED enhances understanding:**
-- Speech → confirms active conversation
-- Sizzle, Frying → reveals cooking activity (may not be mentioned in words)
-- Music, TV → background entertainment
-- Laughter → positive atmosphere (even if not captured in transcription)
-- Crying, Screaming → distress (even if words are unclear)
-
-**Example:**
-- ASR: "足の裏が痛い。ピーマン食べてみる。"
-- SED: Sizzle, Frying, Speech
-- Summary: "料理中。足が痛いと訴えているが、新しい野菜に挑戦している。家族との会話が続いている。"
-
----
-
-### Step 2: Determine Base Score from Summary (-60 to +60)
-
-Read your Summary and ask: "What is the overall situation?"
-
-**Highly Positive (40-60):**
-- Joyful family interactions (楽しい遊び、笑い声、ポジティブな会話)
-- Learning/discovery moments (新しい挑戦、成功体験、褒められる)
-- Active positive engagement (協力して料理、一緒にゲーム)
-
-**Positive (20-40):**
-- Regular positive activities (日常的な会話、食事、遊び)
-- Calm family time (穏やかな団らん、一緒にTV視聴)
-- Engaged activities (YouTube視聴中のコメント、料理の手伝い)
-
-**Neutral (-20 to +20):**
-- Routine activities without emotional tone (移動中、静かな時間)
-- Background conversations (内容不明瞭、雑談)
-- Passive activities (TV/音楽を聴いているだけ)
-
-**Negative (-40 to -20):**
-- Minor discomfort or complaints (痛い、疲れた、イヤだ)
-- Mild conflicts (注意される、小言を言われる)
-- Frustration (うまくいかない、飽きた)
-
-**Highly Negative (-60 to -40):**
-- Intense distress (激しく泣く、パニック、怒鳴る)
-- Serious conflicts (大きな喧嘩、強く叱られる)
-- Clear suffering (強い痛み、恐怖、助けを求める)
-
----
-
-### Step 3: Contextual Adjustments (-20 to +20)
-
-**A. Time-of-Day Context (-15 to +10)**
-
-Age-appropriate timing matters:
-- **Appropriate activity for time**: 0 to +10
-  * Morning (6:00-9:00): Breakfast, getting ready → +5
-  * Daytime (9:00-17:00): Active play, learning → +10
-  * Evening (17:00-20:00): Dinner, family time → +5
-  * Night (20:00-22:00): Calm activities, bedtime routine → 0
-
-- **Inappropriate timing** (especially for young children): -10 to -15
-  * Late night (22:00-6:00): Should be sleeping → -10 to -15
-  * Missing meal times: Unusual absence → -5
-
-**B. Conversation Engagement (-15 to +10)**
-
-Based on both ASR and SED:
-- **Active conversation** (ASR content + Speech 0.5+): +5 to +10
-  * Rich conversation content + high Speech confidence → +10
-  * Brief conversation + medium Speech confidence → +5
-
-- **Special Case: No transcription but Speech detected** (ASR says "発話なし" but SED detects Speech): +5 to +15
-  * This means: Conversation happened but content was unclear/not captured
-  * NOT: Complete silence
-  * Base: +5 to +10 (activity detected)
-  * Can add SER bonus if strong signals (see Step 4)
-
-- **Activity sounds without speech** (SED only): 0 to +5
-  * Cooking, playing, movement sounds → +5 (engaged in activity)
-  * TV, Music only → 0 (passive consumption)
-
-- **Complete silence** (no ASR, no SED): -10 to -15
-  * Likely absent or outside → -15
-  * Possible nap time (if appropriate hour) → -5
-
----
-
-### Step 4: Emotion Data (SER) - Reference Information (-15 to +15)
-
-**⚠️ Use with caution - SER has moderate accuracy**
-
-**When to use SER data:**
-
-1. **Strong emotion signals (score ≥ 4.0)** - Use as important reference:
-   - Joy ≥ 4.0 → Add +10 to +15 points (positive atmosphere detected)
-   - Anger ≥ 4.0 → Subtract -10 to -15 points (negative atmosphere detected)
-   - Sadness ≥ 4.0 → Subtract -10 to -15 points (distress detected)
-
-2. **Moderate emotion signals (2.0 - 4.0)** - Use if it aligns with Summary:
-   - If Summary is already positive AND Joy 2.0-4.0 → Add +5 to +10
-   - If Summary is already negative AND Anger/Sadness 2.0-4.0 → Subtract -5 to -10
-
-3. **Weak signals (< 2.0) or contradicts Summary** - IGNORE
-
-**Example scenario:**
-- Transcription: "発話なし"
-- SED: Speech detected (0.75)
-- SER: Joy 4.6 (strong signal)
-- Summary: "リビングで話し声が聞こえる。楽しそうな雰囲気。"
-- Scoring:
-  * Base: +8 (neutral positive situation)
-  * Time: +5 (appropriate evening time)
-  * Speech detected: +10 (conversation happening)
-  * SER Joy 4.6: +12 (strong positive atmosphere)
-  * Final: 8 + 5 + 10 + 12 = 35
-
----
-
-## Key Reminders
-
-1. **ASR (conversation) is your primary source** - understand what is being said
-2. **SED (acoustic events) enriches context** - reveals activities not in words
-3. **SER (emotion) is secondary** - only use if it clearly supports Summary
-4. **Trust your Summary over raw data** - if they conflict, trust your interpretation
 """)
 
-    # ==================== 5. Full Transcription ====================
+    # ==================== 4. Full Transcription ====================
     prompt_parts.append("\n# Full Transcription\n")
 
     if transcription and transcription.strip():
@@ -457,5 +287,29 @@ Based on both ASR and SED:
                     prompt_parts.append(f"**Pattern:** {top_event}の状態")
 
             prompt_parts.append("\n---\n")  # Separator between blocks
+
+    # ==================== 6. Analysis Guidelines ====================
+    prompt_parts.append("""
+# Analysis Process
+
+**Step 1: Create Summary**
+Based on the data above (Transcription, Acoustic events, Emotion signals), describe what happened in 2-3 sentences.
+
+**Priority for Summary:**
+1. **Conversation content (Transcription)** - PRIMARY SOURCE: What was said?
+2. **Acoustic events (SED)** - CONTEXT: What activities were happening?
+3. **Emotion signals (SER)** - REFERENCE: How did they seem to feel? (use cautiously)
+
+**Step 2: Determine Vibe Score**
+Based on your Summary, assign a score (-100 to +100):
+- **Positive (20-100):** Joyful interactions, engaged activities, learning moments
+- **Neutral (-20 to +20):** Routine activities, background conversations, passive activities
+- **Negative (-100 to -20):** Discomfort, conflicts, distress
+
+**Adjustments:**
+- Time-of-day context (appropriate activities add points; late night for children subtracts points)
+- Conversation engagement (active conversation adds points; silence subtracts points)
+- Strong emotion signals (≥4.0) can adjust score by ±10-15 points; weak signals (<2.0) should be ignored
+""")
 
     return "\n".join(prompt_parts)
