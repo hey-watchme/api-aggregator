@@ -312,15 +312,34 @@ Based on the data above (Transcription, Acoustic events, Emotion signals), descr
 3. **emotion_extractor_result** - REFERENCE: How did they seem to feel? (use cautiously)
 
 **Step 2: Determine Vibe Score**
-Based on your Summary, assign a score (-100 to +100):
-- **Positive (20-100):** Joyful interactions, engaged activities, learning moments
-- **Neutral (-20 to +20):** Routine activities, background conversations, passive activities
-- **Negative (-100 to -20):** Discomfort, conflicts, distress
 
-**Adjustments:**
-- Time-of-day context (appropriate activities add points; late night for children subtracts points)
-- Conversation engagement (active conversation adds points; silence subtracts points)
-- Strong emotion signals (≥4.0) can adjust score by ±10-15 points; weak signals (<2.0) should be ignored
+**判定フロー（この順番で必ず実行）**:
+
+1. **まず発話の有無で分岐**:
+   - vibe_transcriber_resultが「発話なし」→ ケースAへ
+   - 発話内容がある → ケースBへ
+
+**ケースA: 発話なし（-5 to +5の範囲内）**
+behavior_extractor_resultのみで判定:
+- 静寂が多い → 0付近
+- 音楽やTV音 → +2〜3
+- 物音、生活音 → ±2
+- **最終スコア: 必ず-5 to +5の範囲内**
+
+**ケースB: 発話あり（-100 to +100の範囲）**
+主にvibe_transcriber_resultの内容で判定:
+
+a) 内容分析（基本スコア）:
+   - ポジティブ（楽しい、できた、すごい、褒める）→ +30 to +60
+   - ニュートラル（日常会話、質問と回答）→ -20 to +20
+   - ネガティブ（やめて、だめ、食べないで、泣き、叱責）→ -60 to -30
+
+b) behavior_extractor_resultで補正（±10まで）:
+   - Laughter検出 → +10
+   - Crying検出 → -10
+   - その他の活動音 → ±5
+
+**重要**: emotion_extractor_resultはvibe_score計算に使用しない
 
 **Step 3: Extract Significant Emotions**
 Based on the emotion_extractor_result timeline:
