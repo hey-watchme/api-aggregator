@@ -159,15 +159,15 @@ Focus on:
 - All fields are required
 - summary: 2-3 sentences in Japanese describing what happened in THIS recording
 - behavior: exactly 3 key behaviors separated by commas (例: 会話, 食事, 家族団らん)
-- emotion: 1-2 most significant emotions from SER data (例: 喜び, 中立)
-- If conversation/speech is detected in SED data, "会話" MUST be included in behavior field
-- emotion field should use name_ja from SER data (喜び, 中立, 怒り, 悲しみ)
+- emotion: 1-2 most significant emotions from emotion_extractor_result (例: 喜び, 中立)
+- If conversation/speech is detected in behavior_extractor_result, "会話" MUST be included in behavior field
+- emotion field should use name_ja from emotion_extractor_result (喜び, 中立, 怒り, 悲しみ)
 - JSON comments are for documentation only - do not include in output
 
 **rating (0-5の整数):**
 - **目的**: この録音の重要度を0-5のスケールで評価
 - **評価基準**:
-  - **0 (重要でない)**: vibe_transcriber_resultに「発話なし」が含まれる場合
+  - **0 (重要でない)**: 上記vibe_transcriber_resultセクションに「発話なし」が記載されている場合（会話が一切聞き取れなかった場合）
   - **1 (低い重要度)**: 断片的な会話、日常的な背景音
   - **2 (やや重要)**: 短い会話、ルーティン活動
   - **3 (普通)**: 明確な会話内容、一般的な活動
@@ -198,16 +198,16 @@ Focus on:
 *Note: Recordings may include voices of family members or others nearby, not just the client.*
 """)
 
-    # ==================== 4. Full Transcription ====================
-    prompt_parts.append("\n# Full Transcription\n")
+    # ==================== 4. vibe_transcriber_result ====================
+    prompt_parts.append("\n# vibe_transcriber_result\n")
 
     if transcription and transcription.strip():
         prompt_parts.append(f"{transcription}\n")
     else:
         prompt_parts.append("(No speech detected or transcription failed)\n")
 
-    # ==================== 6. Acoustic & Emotional Timeline ====================
-    prompt_parts.append("\n# Acoustic & Emotional Timeline (10-second synchronized analysis)\n")
+    # ==================== 5. behavior_extractor_result & emotion_extractor_result Timeline ====================
+    prompt_parts.append("\n# behavior_extractor_result & emotion_extractor_result Timeline (10-second synchronized analysis)\n")
 
     # Determine if emotion data should be filtered based on ASR results
     # Skip emotion analysis if no speech detected in transcription
@@ -226,7 +226,7 @@ Focus on:
 
             prompt_parts.append(f"## {start_time}-{end_time}秒")
 
-            # Behavior Analysis (SED)
+            # behavior_extractor_result
             if has_behavior and i < len(behavior_data):
                 time_block = behavior_data[i]
                 events = time_block.get('events', [])
@@ -235,7 +235,7 @@ Focus on:
                     # Sort events by score
                     sorted_events = sorted(events, key=lambda x: x.get('score', 0), reverse=True)
 
-                    prompt_parts.append("**Behavior Analysis (SED):**")
+                    prompt_parts.append("**behavior_extractor_result:**")
                     # Show top 3 events
                     for event in sorted_events[:3]:
                         label = event.get('label', 'Unknown')
@@ -243,15 +243,15 @@ Focus on:
                         confidence = "high" if event.get('score', 0) >= 0.7 else "medium" if event.get('score', 0) >= 0.4 else "low"
                         prompt_parts.append(f"  - {label}: {score:.1f}% ({confidence} confidence)")
                 else:
-                    prompt_parts.append("**Behavior Analysis (SED):** No events detected")
+                    prompt_parts.append("**behavior_extractor_result:** No events detected")
             else:
-                prompt_parts.append("**Behavior Analysis (SED):** Data not available")
+                prompt_parts.append("**behavior_extractor_result:** Data not available")
 
             prompt_parts.append("")  # Empty line
 
-            # Emotion Analysis (SER) - Filter based on ASR results
+            # emotion_extractor_result - Filter based on ASR results
             if skip_emotion_analysis:
-                prompt_parts.append("**Emotion Analysis (SER):** No speech detected - emotion data not applicable")
+                prompt_parts.append("**emotion_extractor_result:** No speech detected - emotion data not applicable")
             elif has_emotion and i < len(emotion_data):
                 chunk = emotion_data[i]
                 primary = chunk.get('primary_emotion', {})
@@ -260,7 +260,7 @@ Focus on:
                 primary_name = primary.get('name_ja', 'Unknown')
                 primary_score = primary.get('score', 0)
 
-                prompt_parts.append("**Emotion Analysis (SER):**")
+                prompt_parts.append("**emotion_extractor_result:**")
                 prompt_parts.append(f"  - Primary: {primary_name} (Score: {primary_score:.2f})")
 
                 # Show all emotions
@@ -268,7 +268,7 @@ Focus on:
                     emotion_str = ', '.join([f"{e.get('name_ja', '?')}({e.get('score', 0):.2f})" for e in emotions[:4]])
                     prompt_parts.append(f"  - All emotions: {emotion_str}")
             else:
-                prompt_parts.append("**Emotion Analysis (SER):** Data not available")
+                prompt_parts.append("**emotion_extractor_result:** Data not available")
 
             prompt_parts.append("")  # Empty line
 
@@ -310,9 +310,9 @@ Focus on:
 Based on the data above (Transcription, Acoustic events, Emotion signals), describe what happened in 2-3 sentences.
 
 **Priority for Summary:**
-1. **Conversation content (Transcription)** - PRIMARY SOURCE: What was said?
-2. **Acoustic events (SED)** - CONTEXT: What activities were happening?
-3. **Emotion signals (SER)** - REFERENCE: How did they seem to feel? (use cautiously)
+1. **vibe_transcriber_result** - PRIMARY SOURCE: What was said?
+2. **behavior_extractor_result** - CONTEXT: What activities were happening?
+3. **emotion_extractor_result** - REFERENCE: How did they seem to feel? (use cautiously)
 
 **Step 2: Determine Vibe Score**
 Based on your Summary, assign a score (-100 to +100):
@@ -326,7 +326,7 @@ Based on your Summary, assign a score (-100 to +100):
 - Strong emotion signals (≥4.0) can adjust score by ±10-15 points; weak signals (<2.0) should be ignored
 
 **Step 3: Extract Significant Emotions**
-Based on the Emotion Analysis (SER) timeline:
+Based on the emotion_extractor_result timeline:
 - Identify the 1-2 emotions with the highest average scores across all time blocks
 - Use the name_ja field (喜び, 中立, 怒り, 悲しみ)
 - If no speech detected, use "中立" as default
