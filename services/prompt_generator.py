@@ -136,7 +136,7 @@ Your task: Analyze this recording and generate a psychological analysis in JSON 
   "vibe_score": -36,
   "behavior": "検出された主要な行動パターン3つ（カンマ区切り）",
   "emotion": "最も有意な感情1-2個（カンマ区切り）",
-  "rating": 3
+  "rating": 0
 }
 ```
 
@@ -164,15 +164,12 @@ Focus on:
 - emotion field should use name_ja from emotion_extractor_result (喜び, 中立, 怒り, 悲しみ)
 - JSON comments are for documentation only - do not include in output
 
-**rating (0-5の整数):**
-- **目的**: この録音の重要度を0-5のスケールで評価
-- **評価基準**:
-  - **0 (重要でない)**: 上記vibe_transcriber_resultセクションに「発話なし」が記載されている場合（会話が一切聞き取れなかった場合）
-  - **1 (低い重要度)**: 断片的な会話、日常的な背景音
-  - **2 (やや重要)**: 短い会話、ルーティン活動
-  - **3 (普通)**: 明確な会話内容、一般的な活動
-  - **4 (重要)**: 興味深い会話、記憶に残る出来事、感情的な変化
-  - **5 (非常に重要)**: 印象的な出来事、重要な会話、顕著な感情表現
+**rating (0または1の整数):**
+- **目的**: 発話の有無を判定
+- **判定基準（必ず以下のルールに従うこと）**:
+  - **0**: vibe_transcriber_resultセクションに「発話なし」と記載されている場合
+  - **1**: vibe_transcriber_resultセクションに何らかの会話・発話内容が記載されている場合
+- **重要**: behavior_extractor_resultにSpeechやChild singingが検出されていても、vibe_transcriber_resultが「発話なし」なら必ず0にすること
 """)
 
     # ==================== 3. Recording Context ====================
