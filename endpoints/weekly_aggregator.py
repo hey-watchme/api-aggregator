@@ -82,16 +82,18 @@ def generate_weekly_prompt(spot_features: List[Dict], week_start_date: str, week
         else:
             transcription = 'No transcription available'
 
-        # Extract time
+        # Extract time from local_time (REQUIRED - no UTC fallback)
         try:
             if local_time:
                 dt = datetime.fromisoformat(local_time)
                 time_str = dt.strftime('%H:%M')
             else:
-                dt = datetime.fromisoformat(recorded_at.replace('Z', '+00:00'))
-                time_str = dt.strftime('%H:%M')
-        except:
-            time_str = local_time if local_time else recorded_at
+                # ERROR: local_time is required, do not fallback to UTC
+                print(f"ERROR: local_time missing for spot at {recorded_at}")
+                time_str = "??:??"
+        except Exception as e:
+            print(f"ERROR parsing local_time: {e}")
+            time_str = local_time if local_time else "??:??"
 
         # Format: YYYY-MM-DD (Day) HH:MM
         try:

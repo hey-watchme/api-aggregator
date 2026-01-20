@@ -62,32 +62,19 @@ def generate_spot_prompt(
 
             print(f"Using local_time from database: {local_time}")
         else:
-            # Fallback: Convert UTC to local time using device timezone
-            print(f"Warning: local_time not provided, converting from UTC")
-
-            # Parse ISO 8601 timestamp
-            recorded_at_dt = datetime.fromisoformat(recorded_at.replace('Z', '+00:00'))
-
-            # Get timezone object
-            timezone = pytz.timezone(timezone_str)
-
-            # Convert to local time
-            local_time_dt = recorded_at_dt.astimezone(timezone)
-
-            # Extract components
-            hour = local_time_dt.hour
-            minute = local_time_dt.minute
-            local_date = local_time_dt.strftime('%Y-%m-%d')
-            local_time_str = local_time_dt.strftime('%H:%M:%S')
+            # ERROR: local_time is required, do not use UTC
+            print(f"ERROR: local_time not provided for {recorded_at}")
+            hour = 0
+            minute = 0
+            local_date = "unknown"
+            local_time_str = "??:??:??"
 
     except Exception as e:
-        print(f"Error processing local_time: {e}")
-        # Fallback to UTC
-        recorded_at_dt = datetime.fromisoformat(recorded_at.replace('Z', '+00:00'))
-        hour = recorded_at_dt.hour
-        minute = recorded_at_dt.minute
-        local_date = recorded_at_dt.strftime('%Y-%m-%d')
-        local_time_str = recorded_at_dt.strftime('%H:%M:%S')
+        print(f"ERROR processing local_time: {e}")
+        hour = 0
+        minute = 0
+        local_date = "unknown"
+        local_time_str = "??:??:??"
 
     # Get time period
     time_period = get_time_period(hour)
