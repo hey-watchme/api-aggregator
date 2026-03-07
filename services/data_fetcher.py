@@ -69,31 +69,27 @@ async def get_behavior_data(supabase_client, device_id: str, recorded_at: str) -
         return None
 
 
-async def get_emotion_data(supabase_client, device_id: str, recorded_at: str) -> Optional[list]:
+async def get_emotion_data(supabase_client, device_id: str, recorded_at: str):
     """
-    Fetch emotion analysis result from spot_features
-    Returns chunk-based emotion data directly from emotion_extractor_result
-
-    Args:
-        supabase_client: Supabase client instance
-        device_id: Device ID
-        recorded_at: Timestamp in ISO 8601 format
+    Fetch Hume v3 emotion analysis result from spot_features.
 
     Returns:
-        Chunk-based emotion data or None
-        Format: [{"chunk_id": 1, "start_time": 0.0, "end_time": 10.0, "primary_emotion": {...}, "emotions": [...]}, ...]
+        dict (Hume v3 format with provider="hume") or None
     """
     try:
-        result = supabase_client.table('spot_features').select('emotion_extractor_result').eq(
+        result = supabase_client.table('spot_features').select(
+            'emotion_features_result_hume'
+        ).eq(
             'device_id', device_id
         ).eq(
             'recorded_at', recorded_at
         ).execute()
 
         if result.data and len(result.data) > 0:
-            extractor_result = result.data[0].get('emotion_extractor_result')
-            if extractor_result and isinstance(extractor_result, list):
-                return extractor_result
+            hume_result = result.data[0].get('emotion_features_result_hume')
+            if hume_result and isinstance(hume_result, dict):
+                return hume_result
+
         return None
     except Exception as e:
         print(f"Error fetching emotion data from spot_features: {e}")

@@ -121,7 +121,10 @@ async def aggregate_spot(request: SpotAggregatorRequest):
         context_data = {
             "has_transcription": transcription is not None and len(transcription.strip()) > 0,
             "has_behavior_data": behavior_data is not None and len(behavior_data) > 0,
-            "has_emotion_data": emotion_data is not None and len(emotion_data) > 0,
+            "has_emotion_data": emotion_data is not None and (
+                (isinstance(emotion_data, dict) and emotion_data.get("total_segments", 0) > 0) or
+                (isinstance(emotion_data, list) and len(emotion_data) > 0)
+            ),
             "has_subject_info": subject_info is not None,
             "subject_age": subject_info.get('age') if subject_info else None,
             "subject_gender": subject_info.get('gender') if subject_info else None
@@ -149,6 +152,14 @@ async def aggregate_spot(request: SpotAggregatorRequest):
                 detail="Failed to save aggregated prompt to spot_aggregators table"
             )
 
+        try:
+            supabase_client.table('spot_aggregators').update({
+                'aggregator_status': 'completed'
+            }).eq('device_id', request.device_id).eq('recorded_at', request.recorded_at).execute()
+            print(f"✅ Updated spot_aggregators.aggregator_status to 'completed' for {request.device_id}/{request.recorded_at}")
+        except Exception as update_error:
+            print(f"⚠️ Warning: Failed to update spot_aggregators.aggregator_status: {update_error}")
+
         # 7. Update spot_features table status (mark as processed by aggregator)
         try:
             supabase_client.table('spot_features').update({
@@ -173,6 +184,13 @@ async def aggregate_spot(request: SpotAggregatorRequest):
         raise
     except Exception as e:
         print(f"Error in aggregate_spot: {e}")
+        try:
+            supabase_client.table('spot_aggregators').update({
+                'aggregator_status': 'failed'
+            }).eq('device_id', request.device_id).eq('recorded_at', request.recorded_at).execute()
+            print(f"✅ Updated spot_aggregators.aggregator_status to 'failed' for {request.device_id}/{request.recorded_at}")
+        except Exception as update_error:
+            print(f"⚠️ Warning: Failed to update spot_aggregators.aggregator_status: {update_error}")
         raise HTTPException(
             status_code=500,
             detail=f"Internal server error: {str(e)}"

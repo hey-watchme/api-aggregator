@@ -6,28 +6,191 @@ Generate LLM analysis prompts from aggregated data with timeline synchronization
 Key Features:
 - Timeline-synchronized format: SED and SER data aligned by 10-second blocks
 - Technology-agnostic naming: SED (Sound Event Detection), SER (Speech Emotion Recognition)
-- Pattern detection: Automatic correlation between acoustic events and emotions
+- Hume AI v3 support: 48-emotion prosody/burst/language analysis
 - Full transcription included (no timestamp segmentation)
 
 Data Flow:
 - ASR (Transcription): Full text without timestamps
-- SED (Behavior): 10-second blocks with acoustic events
-- SER (Emotion): 10-second chunks with emotion scores
+- SED (Behavior): 1-second events from behavior extractor
+- SER (Emotion): Hume v3 (48 emotions, utterance-based) or legacy (4 emotions, chunk-based)
 """
 
 from datetime import datetime, time as time_type
-from typing import Optional, Dict, List
+from typing import Optional, Dict, List, Any, Union
 import pytz
 from services.context_builder import get_season, get_weekday_info, get_holiday_context, get_time_period
 from services.subject_fetcher import generate_age_context
 
 
+HUME_EMOTION_JA = {
+    "Admiration": "称賛",
+    "Adoration": "愛慕",
+    "Aesthetic Appreciation": "美的感動",
+    "Amusement": "楽しさ",
+    "Anger": "怒り",
+    "Annoyance": "苛立ち",
+    "Anxiety": "不安",
+    "Awe": "畏敬",
+    "Awkwardness": "気まずさ",
+    "Boredom": "退屈",
+    "Calmness": "穏やかさ",
+    "Concentration": "集中",
+    "Confusion": "困惑",
+    "Contemplation": "熟考",
+    "Contempt": "軽蔑",
+    "Contentment": "満足",
+    "Craving": "渇望",
+    "Desire": "欲求",
+    "Determination": "決意",
+    "Disappointment": "失望",
+    "Disapproval": "不承認",
+    "Disgust": "嫌悪",
+    "Distress": "苦悩",
+    "Doubt": "疑念",
+    "Ecstasy": "恍惚",
+    "Embarrassment": "恥ずかしさ",
+    "Empathic Pain": "共感的苦痛",
+    "Enthusiasm": "熱意",
+    "Entrancement": "魅了",
+    "Envy": "嫉妬",
+    "Excitement": "興奮",
+    "Fear": "恐怖",
+    "Gratitude": "感謝",
+    "Guilt": "罪悪感",
+    "Horror": "戦慄",
+    "Interest": "関心",
+    "Joy": "喜び",
+    "Love": "愛",
+    "Nostalgia": "郷愁",
+    "Pain": "痛み",
+    "Pride": "誇り",
+    "Realization": "気づき",
+    "Relief": "安堵",
+    "Romance": "ロマンス",
+    "Sadness": "悲しみ",
+    "Sarcasm": "皮肉",
+    "Satisfaction": "満足感",
+    "Shame": "羞恥",
+    "Surprise (negative)": "驚き(ネガティブ)",
+    "Surprise (positive)": "驚き(ポジティブ)",
+    "Sympathy": "同情",
+    "Tiredness": "疲労",
+    "Triumph": "勝利感",
+}
+
+
+def _is_hume_format(emotion_data) -> bool:
+    """Check if emotion data is Hume v3 format (dict with provider='hume')"""
+    return isinstance(emotion_data, dict) and emotion_data.get("provider") == "hume"
+
+
+def _top_emotions(emotions_dict: Dict[str, float], n: int = 3) -> List[tuple]:
+    """Extract top N emotions by score from a {name: score} dict"""
+    sorted_emotions = sorted(emotions_dict.items(), key=lambda x: x[1], reverse=True)
+    return sorted_emotions[:n]
+
+
+def _emotion_ja(name: str) -> str:
+    """Translate Hume emotion name to Japanese"""
+    return HUME_EMOTION_JA.get(name, name)
+
+
+def _format_top_emotions(emotions_dict: Dict[str, float], n: int = 3) -> str:
+    """Format top N emotions as 'JA名(score)' string"""
+    top = _top_emotions(emotions_dict, n)
+    return ", ".join(f"{_emotion_ja(name)}({score:.2f})" for name, score in top)
+
+
+def _format_hume_emotion_section(emotion_data: Dict[str, Any], skip_emotion: bool) -> str:
+    """
+    Format Hume v3 emotion data as a prompt section.
+    Returns a string with speech prosody, vocal burst, and language analysis.
+    """
+    if skip_emotion:
+        return "\n# emotion_extractor_result\n\nNo speech detected - emotion data not applicable\n"
+
+    parts = []
+    parts.append("\n# emotion_extractor_result (Hume AI - 48 Emotion Analysis)\n")
+
+    # --- Speech Prosody ---
+    prosody = emotion_data.get("speech_prosody", {})
+    prosody_segments = prosody.get("segments", [])
+
+    if prosody_segments:
+        parts.append("## Voice Tone Emotion (speech_prosody)")
+        for seg in prosody_segments:
+            time_info = seg.get("time", {})
+            begin = time_info.get("begin", 0)
+            end = time_info.get("end", 0)
+            text = seg.get("text", "")
+            emotions = seg.get("emotions", {})
+            dominant = seg.get("dominant_emotion", {})
+
+            text_preview = text[:30] + "..." if len(text) > 30 else text
+            top_str = _format_top_emotions(emotions, 3)
+            dominant_ja = _emotion_ja(dominant.get("name", ""))
+
+            parts.append(
+                f"[{begin:.1f}-{end:.1f}s] \"{text_preview}\"  "
+                f"Dominant: {dominant_ja}({dominant.get('score', 0):.2f})  "
+                f"Top: {top_str}"
+            )
+        parts.append("")
+
+    # --- Vocal Burst ---
+    burst = emotion_data.get("vocal_burst", {})
+    burst_segments = burst.get("segments", [])
+
+    if burst_segments:
+        parts.append("## Non-speech Vocal Emotion (vocal_burst)")
+        for seg in burst_segments:
+            time_info = seg.get("time", {})
+            begin = time_info.get("begin", 0)
+            end = time_info.get("end", 0)
+            emotions = seg.get("emotions", {})
+            dominant = seg.get("dominant_emotion", {})
+
+            top_str = _format_top_emotions(emotions, 3)
+            dominant_ja = _emotion_ja(dominant.get("name", ""))
+
+            parts.append(
+                f"[{begin:.1f}-{end:.1f}s]  "
+                f"Dominant: {dominant_ja}({dominant.get('score', 0):.2f})  "
+                f"Top: {top_str}"
+            )
+        parts.append("")
+
+    # --- Language ---
+    language = emotion_data.get("language", {})
+    lang_segments = language.get("segments", [])
+
+    if lang_segments:
+        parts.append("## Text-based Emotion (language)")
+        for seg in lang_segments:
+            emotions = seg.get("emotions", {})
+            dominant = seg.get("dominant_emotion", {})
+
+            top_str = _format_top_emotions(emotions, 5)
+            dominant_ja = _emotion_ja(dominant.get("name", ""))
+
+            parts.append(
+                f"Dominant: {dominant_ja}({dominant.get('score', 0):.2f})  "
+                f"Top: {top_str}"
+            )
+        parts.append("")
+
+    if not prosody_segments and not burst_segments and not lang_segments:
+        parts.append("(No emotion segments detected)")
+
+    return "\n".join(parts)
+
+
 def generate_spot_prompt(
     transcription: Optional[str],
     behavior_data: Optional[list],
-    emotion_data: Optional[list],
-    recorded_at: str,
-    timezone_str: str,
+    emotion_data: Optional[Union[list, Dict]] = None,
+    recorded_at: str = "",
+    timezone_str: str = "",
     subject_info: Optional[Dict] = None,
     local_time: Optional[str] = None
 ) -> str:
@@ -36,15 +199,15 @@ def generate_spot_prompt(
 
     Args:
         transcription: Transcribed text content (ASR, no timestamps)
-        behavior_data: Behavior analysis results (SED, 10-second blocks)
-        emotion_data: Emotion timeline data (SER, 10-second chunks)
+        behavior_data: Behavior analysis results (SED, per-second events)
+        emotion_data: Hume v3 dict (48 emotions) or legacy list (4 emotions) or None
         recorded_at: UTC timestamp in ISO 8601 format
         timezone_str: Device timezone (e.g., "Asia/Tokyo")
         subject_info: Subject information
         local_time: Local datetime string from database (e.g., "2025-11-16 12:31:01.485")
 
     Returns:
-        Complete LLM analysis prompt with timeline-synchronized format
+        Complete LLM analysis prompt
     """
     prompt_parts = []
 
@@ -87,11 +250,21 @@ def generate_spot_prompt(
     month = int(local_date.split('-')[1])
     season = get_season(month)
 
+    # Detect emotion format
+    hume_mode = _is_hume_format(emotion_data)
+
     # Calculate duration from data
     has_behavior = behavior_data and len(behavior_data) > 0
-    has_emotion = emotion_data and len(emotion_data) > 0
-    num_blocks = max(len(behavior_data) if has_behavior else 0, len(emotion_data) if has_emotion else 0)
-    duration = num_blocks * 10 if num_blocks > 0 else 60
+    has_emotion = emotion_data is not None and (
+        (isinstance(emotion_data, list) and len(emotion_data) > 0) or
+        (isinstance(emotion_data, dict) and emotion_data.get("total_segments", 0) > 0)
+    )
+    if has_behavior:
+        duration = len(behavior_data)
+    elif has_emotion and not hume_mode:
+        duration = len(emotion_data) * 10
+    else:
+        duration = 60
 
     # ==================== 1. Task Definition ====================
     prompt_parts.append(f"""# Spot Recording Analysis Task
@@ -146,9 +319,9 @@ Focus on:
 - All fields are required
 - summary: 2-3 sentences in Japanese describing what happened in THIS recording
 - behavior: exactly 3 key behaviors separated by commas (例: 会話, 食事, 家族団らん)
-- emotion: 1-2 most significant emotions from emotion_extractor_result (例: 喜び, 中立)
+- emotion: 1-2 most significant emotions in Japanese from emotion_extractor_result (例: 困惑, 楽しさ, 穏やかさ)
 - If conversation/speech is detected in behavior_extractor_result, "会話" MUST be included in behavior field
-- emotion field should use name_ja from emotion_extractor_result (喜び, 中立, 怒り, 悲しみ)
+- emotion field: Use Japanese emotion names from the Hume AI analysis (48 emotion categories available)
 - JSON comments are for documentation only - do not include in output
 
 **rating (0または1の整数):**
@@ -190,103 +363,50 @@ Focus on:
     else:
         prompt_parts.append("(No speech detected or transcription failed)\n")
 
-    # ==================== 5. behavior_extractor_result & emotion_extractor_result Timeline ====================
-    prompt_parts.append("\n# behavior_extractor_result & emotion_extractor_result Timeline (10-second synchronized analysis)\n")
+    # ==================== 5. behavior_extractor_result Timeline ====================
+    prompt_parts.append("\n# behavior_extractor_result Timeline\n")
 
-    # Determine if emotion data should be filtered based on ASR results
-    # Skip emotion analysis if no speech detected in transcription
+    if not has_behavior:
+        prompt_parts.append("(No behavior data available)\n")
+    else:
+        num_entries = len(behavior_data)
+        for i in range(num_entries):
+            start_time = i * 10
+            end_time = (i + 1) * 10
+
+            time_block = behavior_data[i]
+            events = time_block.get('events', [])
+
+            if events:
+                sorted_events = sorted(events, key=lambda x: x.get('score', 0), reverse=True)
+
+                prompt_parts.append(f"## {start_time}-{end_time}s")
+                for event in sorted_events[:3]:
+                    label = event.get('label', 'Unknown')
+                    score = event.get('score', 0) * 100
+                    confidence = "high" if event.get('score', 0) >= 0.7 else "medium" if event.get('score', 0) >= 0.4 else "low"
+                    prompt_parts.append(f"  - {label}: {score:.1f}% ({confidence})")
+                prompt_parts.append("")
+            else:
+                prompt_parts.append(f"## {start_time}-{end_time}s")
+                prompt_parts.append("  (silence)")
+                prompt_parts.append("")
+
+    # ==================== 6. emotion_extractor_result ====================
     skip_emotion_analysis = (
         not transcription or
         not transcription.strip() or
         transcription.strip() in ["(No speech detected or transcription failed)", "発話なし"]
     )
 
-    if not has_behavior and not has_emotion:
-        prompt_parts.append("(No timeline data available)")
+    if has_emotion and hume_mode:
+        prompt_parts.append(_format_hume_emotion_section(emotion_data, skip_emotion_analysis))
+    elif not has_emotion:
+        prompt_parts.append("\n# emotion_extractor_result\n\n(No emotion data available)\n")
     else:
-        for i in range(num_blocks):
-            start_time = i * 10
-            end_time = (i + 1) * 10
+        prompt_parts.append("\n# emotion_extractor_result\n\n(Unsupported emotion data format)\n")
 
-            prompt_parts.append(f"## {start_time}-{end_time}秒")
-
-            # behavior_extractor_result
-            if has_behavior and i < len(behavior_data):
-                time_block = behavior_data[i]
-                events = time_block.get('events', [])
-
-                if events:
-                    # Sort events by score
-                    sorted_events = sorted(events, key=lambda x: x.get('score', 0), reverse=True)
-
-                    prompt_parts.append("**behavior_extractor_result:**")
-                    # Show top 3 events
-                    for event in sorted_events[:3]:
-                        label = event.get('label', 'Unknown')
-                        score = event.get('score', 0) * 100
-                        confidence = "high" if event.get('score', 0) >= 0.7 else "medium" if event.get('score', 0) >= 0.4 else "low"
-                        prompt_parts.append(f"  - {label}: {score:.1f}% ({confidence} confidence)")
-                else:
-                    prompt_parts.append("**behavior_extractor_result:** No events detected")
-            else:
-                prompt_parts.append("**behavior_extractor_result:** Data not available")
-
-            prompt_parts.append("")  # Empty line
-
-            # emotion_extractor_result - Filter based on ASR results
-            if skip_emotion_analysis:
-                prompt_parts.append("**emotion_extractor_result:** No speech detected - emotion data not applicable")
-            elif has_emotion and i < len(emotion_data):
-                chunk = emotion_data[i]
-                primary = chunk.get('primary_emotion', {})
-                emotions = chunk.get('emotions', [])
-
-                primary_name = primary.get('name_ja', 'Unknown')
-                primary_score = primary.get('score', 0)
-
-                prompt_parts.append("**emotion_extractor_result:**")
-                prompt_parts.append(f"  - Primary: {primary_name} (Score: {primary_score:.2f})")
-
-                # Show all emotions
-                if emotions:
-                    emotion_str = ', '.join([f"{e.get('name_ja', '?')}({e.get('score', 0):.2f})" for e in emotions[:4]])
-                    prompt_parts.append(f"  - All emotions: {emotion_str}")
-            else:
-                prompt_parts.append("**emotion_extractor_result:** Data not available")
-
-            prompt_parts.append("")  # Empty line
-
-            # Pattern interpretation - Only if emotion data is valid
-            if not skip_emotion_analysis and has_behavior and i < len(behavior_data) and has_emotion and i < len(emotion_data):
-                events = behavior_data[i].get('events', [])
-                primary_emotion = emotion_data[i].get('primary_emotion', {}).get('name_ja', '')
-
-                # Simple pattern detection
-                has_speech = any('Speech' in e.get('label', '') for e in events)
-                has_laughter = any('Laughter' in e.get('label', '') or '笑い' in e.get('label', '') for e in events)
-                has_crying = any('Crying' in e.get('label', '') or '泣' in e.get('label', '') for e in events)
-
-                pattern = "**Pattern:** "
-                if has_laughter and '喜び' in primary_emotion:
-                    pattern += "笑い声と喜びの感情が一致 → 高信頼性のポジティブ状態"
-                elif has_crying and ('悲しみ' in primary_emotion or '怒り' in primary_emotion):
-                    pattern += "泣き声とネガティブ感情が一致 → 高信頼性の苦痛状態"
-                elif has_speech:
-                    pattern += f"会話中、{primary_emotion}の感情"
-                else:
-                    pattern += f"{primary_emotion}の感情状態"
-
-                prompt_parts.append(pattern)
-            elif skip_emotion_analysis and has_behavior and i < len(behavior_data):
-                # Pattern for behavior-only (no emotion)
-                events = behavior_data[i].get('events', [])
-                if events:
-                    top_event = events[0].get('label', '').split('/')[0].strip()
-                    prompt_parts.append(f"**Pattern:** {top_event}の状態")
-
-            prompt_parts.append("\n---\n")  # Separator between blocks
-
-    # ==================== 6. Analysis Guidelines ====================
+    # ==================== 7. Analysis Guidelines ====================
     prompt_parts.append("""
 # Analysis Process
 
@@ -329,12 +449,12 @@ b) behavior_extractor_resultで補正（±10まで）:
 **重要**: emotion_extractor_resultはvibe_score計算に使用しない
 
 **Step 3: Extract Significant Emotions**
-Based on the emotion_extractor_result timeline:
-- Identify the 1-2 emotions with the highest average scores across all time blocks
-- Use the name_ja field (喜び, 中立, 怒り, 悲しみ)
+Based on the emotion_extractor_result section:
+- Identify the 1-2 dominant emotions from the Hume AI analysis
+- Use Japanese emotion names (e.g. 困惑, 楽しさ, 苦悩, 穏やかさ, 不安, 喜び, 怒り, 悲しみ)
+- Consider speech_prosody as primary source, vocal_burst and language as supplementary
 - If no speech detected, use "中立" as default
-- Priority: Primary emotions with score ≥ 2.0
-- Example output: "喜び, 中立" or "中立"
+- Example output: "困惑, 楽しさ" or "穏やかさ"
 """)
 
     return "\n".join(prompt_parts)
