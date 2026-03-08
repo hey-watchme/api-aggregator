@@ -8,7 +8,7 @@
 
 **役割**: spot_featuresテーブルから3つの特徴抽出結果（ASR + SED + SER）を取得し、時系列を保持した統合プロンプトを生成
 
-**プロンプト形式**: タイムライン同期型（10秒ごとにSED/SERを同期表示）
+**プロンプト形式**: 統合タイムライン型（5秒ブロックでASR・SED・SERを時間同期）
 
 **アーキテクチャ**: UTC統一アーキテクチャ（全タイムスタンプをUTCで保存、表示時にローカル時間変換）
 
@@ -47,11 +47,6 @@
 | └ リージョン | ap-southeast-2 (Sydney) | |
 | └ URI | `754724220380.dkr.ecr.ap-southeast-2.amazonaws.com/watchme-aggregator:latest` | |
 | | | |
-| **⚙️ systemd** | | |
-| └ サービス名 | `aggregator-api.service` | docker-compose管理 |
-| └ 起動コマンド | `docker-compose up -d` | |
-| └ 自動起動 | enabled | サーバー再起動時に自動起動 |
-| | | |
 | **📂 ディレクトリ** | | |
 | └ ソースコード | `/Users/kaya.matsumoto/projects/watchme/api/aggregator` | ローカル |
 | └ GitHubリポジトリ | `hey-watchme/api-aggregator` | |
@@ -71,26 +66,29 @@
 
 ## 🎯 プロンプトフォーマット
 
-### 設計思想
+### 設計思想：統合タイムライン（Unified Timeline）
 
-**Summary-Based Approach（会話内容理解優先）**:
-- カウンセラーロール設定により、プロフィール情報の重複を回避
-- ASR（会話内容）を最優先データソースとして位置づけ
-- SED（音響イベント）で会話内容を補完
-- SER（感情スコア）は精度が低いため補助的に使用
+**3つの分析結果を同一の時間軸で同期表示する**ことが最大の特徴。
 
-### データ優先順位
+従来は ASR（文字起こし）、SED（音響イベント）、SER（感情分析）が**それぞれ別セクション・別の時間単位**で表示されていた。
+これを **5秒ブロック** に統一し、「その5秒間に何が話され、どんな音が鳴り、どんな感情だったか」を一目で把握できるようにした。
 
-1. **ASR (Transcription)**: PRIMARY SOURCE - 最も信頼できる会話内容
-2. **SED (Sound Event Detection)**: RELIABLE CONTEXT - 会話を補完する音響イベント
-3. **SER (Speech Emotion Recognition)**: MINOR ADJUSTMENT - 精度低い・参考程度
+**統合の根拠**:
+- ASR: Speechmatics APIから**単語ごとのタイムスタンプ**（`start_time`, `end_time`）を取得し、5秒ブロックに割り当て
+- SED: 1秒間隔のイベントデータを5秒ブロックに集約（各ブロック内の最大スコアを採用）
+- SER: Hume AIの発話区間ベースのセグメント（可変長）を、時間が重なる5秒ブロックに割り当て
+
+**データ優先順位**:
+1. **ASR**: PRIMARY SOURCE - 最も信頼できる会話内容
+2. **SED**: RELIABLE CONTEXT - 会話を補完する音響イベント
+3. **SER**: REFERENCE - 精度が低いため補助的に使用
 
 ### 主な特徴
 
-1. **Counselor Role（カウンセラーロール）**: セッションノートを書くように、THIS recordingに焦点
-2. **Full Transcription（全文）**: 時系列なし、会話内容をそのまま提示
-3. **Timeline（10秒ごと同期）**: SED（音響イベント）+ SER（感情）を同じ時間軸で表示
-4. **Pattern Detection**: 自動的に「笑い声 + 喜び」「衝突音 + 怒り」などを検出
+1. **Counselor Role**: セッションノートを書くように、THIS recordingに焦点
+2. **Unified Timeline（5秒ブロック同期）**: ASR + SED + SER を同じ時間軸で統合表示
+3. **話者分離**: ASRが話者ラベル（S1, S2...）付きで表示されるため、誰が何を言ったかが明確
+4. **レガシー互換**: `words` データがない旧録音は従来形式（分離表示）にフォールバック
 
 ### 出力フォーマット
 
@@ -131,67 +129,59 @@
 = 35
 ```
 
-### プロンプト構造例
+### プロンプト構造例（統合タイムライン形式）
 
 ```markdown
 # Spot Recording Analysis Task
-You are a professional counselor writing a brief session note for the client's family.
-Your audience: Non-technical family members
-Your tone: Clear, simple, everyday language
-Avoid: ASR, SED, SER, detection methods, time segments
+You are a professional counselor writing a brief session note...
 
 # Output Format
-**Good examples (natural language):**
-- "夕食の準備中。ピーマンを食べてみようとしている。足の裏が痛いと訴えている。"
-- "リビングで静かに過ごしている。遠くで誰かの声が聞こえるが、会話の内容ははっきりしない。"
-
-**What NOT to do:**
-- ❌ "ASRでは発話が検出されなかった"
-- ❌ "SEDでは0-10秒に音声信号が報告"
+(JSON: summary, vibe_score, behavior, emotion, rating)
 
 # Recording Context
-**Temporal Information:** Duration, Date, Time, Season
-**Client Background (for context):** Age, Gender, Notes
-**Device Context:** Stationary device in living room
+Duration: 60 seconds / Date: 2026-03-08 / Local Time: 21:30 (夜)
 
-# Vibe Score Calculation Guidelines
-(4-step scoring with SER gradual use)
+# Unified Analysis Timeline (5s blocks)
 
-# Full Transcription
-ちしても良くないけどもしばんなどんばい...
+## 0-5s
+  ASR [S1]: "あれね。あそこかと。"
+  SED: Speech(65%), Background noise(12%)
+  SER [1.7-4.0s]: 困惑(0.24) | 困惑(0.24), 驚き(0.14), 怒り(0.09)
 
-# Acoustic & Emotional Timeline (10-second synchronized analysis)
-## 0-10秒
-**Behavior Analysis (SED):** Speech 76.5%
-**Emotion Analysis (SER):** Primary: 喜び (3.46)
-**Pattern:** 会話中、喜びの感情
+## 5-10s
+  ASR [S1]: "10888多そう。816。あ。"
+  ASR [S2]: "3ぞすぐわかった。"
+  SED: Speech(77%)
+  SER [5.1-5.7s]: 穏やかさ(0.12) | 穏やかさ(0.12), 困惑(0.10), 関心(0.07)
+  SER [6.5-7.2s]: 悲しみ(0.14) | 悲しみ(0.14), 穏やかさ(0.09), 苦悩(0.08)
+
+## 15-20s
+  SED: Speech(60%)
+  SER(burst) [16.0-17.0s]: 気まずさ(0.35)
+
+## Overall Text Emotion (language analysis)
+  Dominant: 熱意(0.45)
+  Top 5: 熱意(0.45), 興奮(0.38), 関心(0.18), 満足感(0.16), 喜び(0.15)
+
+# Analysis Process
+(Step 1: Summary, Step 2: Vibe Score, Step 3: Emotions)
 ```
 
-### 時系列保持の効果
+### 統合タイムラインの効果
 
 **シーン例: 怒って物を投げた**
 ```markdown
-## 10-20秒
-**Behavior Analysis (SED):**
-  - Crash / 衝突音: 68.5% (high confidence)  ← 物を投げた音
-  - Glass breaking / ガラス破損: 22.1%
+## 10-15s
+  ASR [S1]: "やめてよ！もう嫌！"
+  SED: Crash(69%), Speech(55%)
+  SER [10.2-12.5s]: 怒り(0.58) | 怒り(0.58), 苛立ち(0.32), 苦悩(0.21)
 
-**Emotion Analysis (SER):**
-  - Primary: 怒り (Score: 5.89)  ← 高い怒りスコア
-
-**Pattern:** 衝突音 + 怒りの感情 → 物を投げた可能性が高い
-
-## 20-30秒（直後）
-**Behavior Analysis (SED):**
-  - Silence / 静寂: 78.3%  ← 急に静かになった
-
-**Emotion Analysis (SER):**
-  - Primary: 悲しみ (Score: 4.21)  ← 怒り→悲しみに変化
-
-**Pattern:** 怒りの後、静寂と悲しみ → 後悔・落ち着きのフェーズ
+## 15-20s
+  SED: Silence(78%)
+  SER [15.0-18.0s]: 悲しみ(0.42) | 悲しみ(0.42), 羞恥(0.18), 罪悪感(0.15)
 ```
 
-→ LLMが「10-20sで怒りと衝突音が同時発生。直後に静寂と悲しみ。感情の変化が物を投げた行動と整合している」と判断可能
+→ LLMが**同一タイムライン上で**「発話内容 + 衝突音 + 怒り」→「静寂 + 悲しみ」という感情遷移を読み取れる
 
 ---
 
@@ -199,27 +189,28 @@ Avoid: ASR, SED, SER, detection methods, time segments
 
 ```
 1. spot_features から3つの特徴データ取得
-   - vibe_transcriber_result (ASR: 文字起こし) - 時系列なし
-   - behavior_extractor_result (SED: 音響イベント) - 10秒ブロック
-   - emotion_extractor_result (SER: 感情) - 10秒チャンク
+   - vibe_transcriber_result (ASR: jsonb)
+     - transcription: 話者ラベル付きテキスト
+     - words: 単語ごとのタイムスタンプ・話者・信頼度
+   - behavior_extractor_result (SED: jsonb) - 1秒間隔イベント
+   - emotion_features_result_hume (SER: jsonb) - 発話区間ベース48感情
 
 2. devices.timezone 取得
 
 3. UTC → ローカル時間変換（pytz使用）
 
-4. 時間コンテキスト生成
-   - 季節、曜日、時間帯、祝日
+4. 時間コンテキスト生成（季節、曜日、時間帯、祝日）
 
 5. subject_info 取得（年齢、性別、メモ）
 
-6. タイムライン統合プロンプト生成（~4000文字）
-   - Full Transcription
-   - Timeline (10-second blocks): SED + SER 同期表示
-   - Pattern detection: 自動相関検出
-   - Overall Summary: 統計とキーパターン
+6. 統合タイムライン生成
+   - ASR words を 5秒ブロックに割り当て（話者別グルーピング）
+   - SED 1秒イベントを 5秒ブロックに集約（最大スコア採用、上位3件）
+   - SER prosody/burst セグメントを時間重複する 5秒ブロックに配置
+   - language分析（テキスト全体）は別枠で表示
 
 7. spot_aggregators テーブルに保存
-   - prompt: タイムライン統合プロンプト
+   - prompt: 統合タイムラインプロンプト
    - context_data: メタデータ（JSONB）
 ```
 
@@ -276,12 +267,11 @@ POST /aggregator/spot
 ```
 
 **プロンプト内容** (aggregated_prompt):
-- Task Definition & Guidelines: ~2500文字
-- Temporal Context: ~200文字
-- Full Transcription: 100-500文字（可変）
-- Timeline (6 blocks × 150文字): ~900文字
-- Overall Summary: ~400文字
-- **合計**: ~4000文字
+- Task Definition & Output Format: ~2500文字
+- Recording Context: ~200文字
+- Unified Analysis Timeline（5秒ブロック × 最大12-17ブロック）: ~1500文字
+- Analysis Guidelines: ~500文字
+- **合計**: ~4500文字
 
 ---
 
@@ -610,5 +600,5 @@ CREATE TABLE weekly_aggregators (
 
 ---
 
-**最終更新**: 2025-12-03
+**最終更新**: 2026-03-08
 **ステータス**: ✅ 本番稼働中（Spot + Daily）、試験段階（Weekly）
