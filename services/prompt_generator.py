@@ -185,6 +185,148 @@ def _format_hume_emotion_section(emotion_data: Dict[str, Any], skip_emotion: boo
     return "\n".join(parts)
 
 
+def _build_unified_timeline(
+    whisper_data: Optional[Dict],
+    behavior_data: Optional[list],
+    emotion_data: Optional[Union[list, Dict]],
+    block_seconds: int = 5
+) -> str:
+    """
+    Build a unified timeline combining ASR, SED, and SER data
+    aligned by fixed-duration time blocks.
+    """
+    has_words = (whisper_data and isinstance(whisper_data, dict)
+                 and whisper_data.get("words"))
+    has_behavior = behavior_data and len(behavior_data) > 0
+    hume_mode = _is_hume_format(emotion_data) if emotion_data else False
+
+    # Determine total duration from available data
+    max_time = 0
+    if has_words:
+        for w in whisper_data["words"]:
+            et = w.get("end_time", 0)
+            if et > max_time:
+                max_time = et
+    if has_behavior:
+        last_t = behavior_data[-1].get("time", 0)
+        if last_t + 1 > max_time:
+            max_time = last_t + 1
+    if hume_mode:
+        for seg in emotion_data.get("speech_prosody", {}).get("segments", []):
+            et = seg.get("time", {}).get("end", 0)
+            if et > max_time:
+                max_time = et
+
+    if max_time == 0:
+        max_time = 60
+
+    num_blocks = int(max_time // block_seconds) + 1
+    parts = []
+    parts.append(f"\n# Unified Analysis Timeline ({block_seconds}s blocks)\n")
+
+    for b in range(num_blocks):
+        t_start = b * block_seconds
+        t_end = (b + 1) * block_seconds
+        block_parts = []
+
+        # --- ASR: words in this block ---
+        if has_words:
+            speakers_in_block = {}
+            for w in whisper_data["words"]:
+                wt = w.get("start_time", 0)
+                if t_start <= wt < t_end and w.get("type") == "word":
+                    spk = w.get("speaker", "?")
+                    if spk not in speakers_in_block:
+                        speakers_in_block[spk] = []
+                    speakers_in_block[spk].append(w.get("content", ""))
+            # Also pick up punctuation that follows words in this block
+            for w in whisper_data["words"]:
+                wt = w.get("start_time", 0)
+                if t_start <= wt < t_end and w.get("type") == "punctuation":
+                    spk = w.get("speaker", "?")
+                    if spk in speakers_in_block and speakers_in_block[spk]:
+                        speakers_in_block[spk][-1] += w.get("content", "")
+
+            if speakers_in_block:
+                for spk, tokens in speakers_in_block.items():
+                    text = "".join(tokens)
+                    block_parts.append(f"  ASR [{spk}]: \"{text}\"")
+
+        # --- SED: behavior events in this block ---
+        if has_behavior:
+            block_events = {}
+            for entry in behavior_data:
+                t = entry.get("time", 0)
+                if t_start <= t < t_end:
+                    for ev in entry.get("events", []):
+                        label = ev.get("label", "Unknown")
+                        score = ev.get("score", 0)
+                        if label in block_events:
+                            block_events[label] = max(block_events[label], score)
+                        else:
+                            block_events[label] = score
+
+            if block_events:
+                sorted_ev = sorted(block_events.items(), key=lambda x: x[1], reverse=True)[:3]
+                ev_str = ", ".join(f"{l}({s*100:.0f}%)" for l, s in sorted_ev)
+                block_parts.append(f"  SED: {ev_str}")
+
+        # --- SER: emotion segments overlapping this block ---
+        if hume_mode:
+            prosody_segs = emotion_data.get("speech_prosody", {}).get("segments", [])
+            for seg in prosody_segs:
+                seg_begin = seg.get("time", {}).get("begin", 0)
+                seg_end = seg.get("time", {}).get("end", 0)
+                if seg_begin < t_end and seg_end > t_start:
+                    dominant = seg.get("dominant_emotion", {})
+                    d_name = _emotion_ja(dominant.get("name", ""))
+                    d_score = dominant.get("score", 0)
+                    emotions = seg.get("emotions", {})
+                    top3 = _top_emotions(emotions, 3)
+                    top_str = ", ".join(
+                        f"{_emotion_ja(n)}({s:.2f})" for n, s in top3
+                    )
+                    block_parts.append(
+                        f"  SER [{seg_begin:.1f}-{seg_end:.1f}s]: "
+                        f"{d_name}({d_score:.2f}) | {top_str}"
+                    )
+
+            burst_segs = emotion_data.get("vocal_burst", {}).get("segments", [])
+            for seg in burst_segs:
+                seg_begin = seg.get("time", {}).get("begin", 0)
+                seg_end = seg.get("time", {}).get("end", 0)
+                if seg_begin < t_end and seg_end > t_start:
+                    dominant = seg.get("dominant_emotion", {})
+                    d_name = _emotion_ja(dominant.get("name", ""))
+                    d_score = dominant.get("score", 0)
+                    block_parts.append(
+                        f"  SER(burst) [{seg_begin:.1f}-{seg_end:.1f}s]: "
+                        f"{d_name}({d_score:.2f})"
+                    )
+
+        if block_parts:
+            parts.append(f"## {t_start}-{t_end}s")
+            parts.extend(block_parts)
+            parts.append("")
+
+    # --- Language-level emotion (full-text, not time-based) ---
+    if hume_mode:
+        lang_segs = emotion_data.get("language", {}).get("segments", [])
+        if lang_segs:
+            parts.append("## Overall Text Emotion (language analysis)")
+            seg = lang_segs[0]
+            dominant = seg.get("dominant_emotion", {})
+            d_name = _emotion_ja(dominant.get("name", ""))
+            d_score = dominant.get("score", 0)
+            top5 = _top_emotions(seg.get("emotions", {}), 5)
+            top_str = ", ".join(f"{_emotion_ja(n)}({s:.2f})" for n, s in top5)
+            parts.append(f"  Dominant: {d_name}({d_score:.2f})")
+            parts.append(f"  Top 5: {top_str}")
+            parts.append("")
+
+    return "\n".join(parts)
+
+
 def generate_spot_prompt(
     transcription: Optional[str],
     behavior_data: Optional[list],
@@ -192,7 +334,8 @@ def generate_spot_prompt(
     recorded_at: str = "",
     timezone_str: str = "",
     subject_info: Optional[Dict] = None,
-    local_time: Optional[str] = None
+    local_time: Optional[str] = None,
+    whisper_data: Optional[Dict] = None
 ) -> str:
     """
     Generate comprehensive LLM analysis prompt for spot recording
@@ -319,17 +462,17 @@ Focus on:
 - All fields are required
 - summary: 2-3 sentences in Japanese describing what happened in THIS recording
 - behavior: exactly 3 key behaviors separated by commas (例: 会話, 食事, 家族団らん)
-- emotion: 1-2 most significant emotions in Japanese from emotion_extractor_result (例: 困惑, 楽しさ, 穏やかさ)
-- If conversation/speech is detected in behavior_extractor_result, "会話" MUST be included in behavior field
+- emotion: 1-2 most significant emotions in Japanese from SER data (例: 困惑, 楽しさ, 穏やかさ)
+- If conversation/speech is detected in SED data, "会話" MUST be included in behavior field
 - emotion field: Use Japanese emotion names from the Hume AI analysis (48 emotion categories available)
 - JSON comments are for documentation only - do not include in output
 
 **rating (0または1の整数):**
 - **目的**: 発話の有無を判定
 - **判定基準（必ず以下のルールに従うこと）**:
-  - **0**: vibe_transcriber_resultセクションに「発話なし」と記載されている場合
-  - **1**: vibe_transcriber_resultセクションに何らかの会話・発話内容が記載されている場合
-- **重要**: behavior_extractor_resultにSpeechやChild singingが検出されていても、vibe_transcriber_resultが「発話なし」なら必ず0にすること
+  - **0**: ASRセクションに発話内容がない場合
+  - **1**: ASRセクションに何らかの会話・発話内容がある場合
+- **重要**: SEDにSpeechやChild singingが検出されていても、ASRに発話がなければ必ず0にすること
 """)
 
     # ==================== 3. Recording Context ====================
@@ -355,101 +498,92 @@ Focus on:
 *Note: Recordings may include voices of family members or others nearby, not just the client.*
 """)
 
-    # ==================== 4. vibe_transcriber_result ====================
-    prompt_parts.append("\n# vibe_transcriber_result\n")
+    # ==================== 4. Unified Analysis Timeline ====================
+    has_words = (whisper_data and isinstance(whisper_data, dict)
+                 and whisper_data.get("words"))
 
-    if transcription and transcription.strip():
-        prompt_parts.append(f"{transcription}\n")
+    if has_words:
+        # New format: unified 5s timeline with ASR + SED + SER
+        prompt_parts.append(
+            _build_unified_timeline(whisper_data, behavior_data, emotion_data, block_seconds=5)
+        )
     else:
-        prompt_parts.append("(No speech detected or transcription failed)\n")
+        # Legacy fallback: separate sections for old data without word timestamps
+        prompt_parts.append("\n# vibe_transcriber_result\n")
+        if transcription and transcription.strip():
+            prompt_parts.append(f"{transcription}\n")
+        else:
+            prompt_parts.append("(No speech detected or transcription failed)\n")
 
-    # ==================== 5. behavior_extractor_result Timeline ====================
-    prompt_parts.append("\n# behavior_extractor_result Timeline\n")
+        prompt_parts.append("\n# behavior_extractor_result Timeline\n")
+        if not has_behavior:
+            prompt_parts.append("(No behavior data available)\n")
+        else:
+            for entry in behavior_data:
+                t = entry.get("time", 0)
+                events = entry.get("events", [])
+                if events:
+                    sorted_events = sorted(events, key=lambda x: x.get("score", 0), reverse=True)[:3]
+                    prompt_parts.append(f"## {t}s")
+                    for ev in sorted_events:
+                        label = ev.get("label", "Unknown")
+                        score = ev.get("score", 0) * 100
+                        prompt_parts.append(f"  - {label}: {score:.0f}%")
+                    prompt_parts.append("")
 
-    if not has_behavior:
-        prompt_parts.append("(No behavior data available)\n")
-    else:
-        num_entries = len(behavior_data)
-        for i in range(num_entries):
-            start_time = i * 10
-            end_time = (i + 1) * 10
+        if has_emotion and hume_mode:
+            skip_emotion = (
+                not transcription or not transcription.strip()
+                or transcription.strip() in ["(No speech detected or transcription failed)", ""]
+            )
+            prompt_parts.append(_format_hume_emotion_section(emotion_data, skip_emotion))
+        elif not has_emotion:
+            prompt_parts.append("\n# emotion_extractor_result\n\n(No emotion data available)\n")
 
-            time_block = behavior_data[i]
-            events = time_block.get('events', [])
-
-            if events:
-                sorted_events = sorted(events, key=lambda x: x.get('score', 0), reverse=True)
-
-                prompt_parts.append(f"## {start_time}-{end_time}s")
-                for event in sorted_events[:3]:
-                    label = event.get('label', 'Unknown')
-                    score = event.get('score', 0) * 100
-                    confidence = "high" if event.get('score', 0) >= 0.7 else "medium" if event.get('score', 0) >= 0.4 else "low"
-                    prompt_parts.append(f"  - {label}: {score:.1f}% ({confidence})")
-                prompt_parts.append("")
-            else:
-                prompt_parts.append(f"## {start_time}-{end_time}s")
-                prompt_parts.append("  (silence)")
-                prompt_parts.append("")
-
-    # ==================== 6. emotion_extractor_result ====================
-    skip_emotion_analysis = (
-        not transcription or
-        not transcription.strip() or
-        transcription.strip() in ["(No speech detected or transcription failed)", "発話なし"]
-    )
-
-    if has_emotion and hume_mode:
-        prompt_parts.append(_format_hume_emotion_section(emotion_data, skip_emotion_analysis))
-    elif not has_emotion:
-        prompt_parts.append("\n# emotion_extractor_result\n\n(No emotion data available)\n")
-    else:
-        prompt_parts.append("\n# emotion_extractor_result\n\n(Unsupported emotion data format)\n")
-
-    # ==================== 7. Analysis Guidelines ====================
+    # ==================== 5. Analysis Guidelines ====================
     prompt_parts.append("""
 # Analysis Process
 
 **Step 1: Create Summary**
-Based on the data above (Transcription, Acoustic events, Emotion signals), describe what happened in 2-3 sentences.
+Based on the timeline above (ASR speech, SED acoustic events, SER emotions), describe what happened in 2-3 sentences.
 
 **Priority for Summary:**
-1. **vibe_transcriber_result** - PRIMARY SOURCE: What was said?
-2. **behavior_extractor_result** - CONTEXT: What activities were happening?
-3. **emotion_extractor_result** - REFERENCE: How did they seem to feel? (use cautiously)
+1. **ASR** - PRIMARY SOURCE: What was said? Who was speaking?
+2. **SED** - CONTEXT: What activities/sounds were happening?
+3. **SER** - REFERENCE: How did they seem to feel? (use cautiously)
 
 **Step 2: Determine Vibe Score**
 
 **判定フロー（この順番で必ず実行）**:
 
 1. **まず発話の有無で分岐**:
-   - vibe_transcriber_resultが「発話なし」→ ケースAへ
+   - ASRセクションに発話がない → ケースAへ
    - 発話内容がある → ケースBへ
 
 **ケースA: 発話なし（-5 to +5の範囲内）**
-behavior_extractor_resultのみで判定:
+SEDのみで判定:
 - 静寂が多い → 0付近
 - 音楽やTV音 → +2〜3
 - 物音、生活音 → ±2
 - **最終スコア: 必ず-5 to +5の範囲内**
 
 **ケースB: 発話あり（-100 to +100の範囲）**
-主にvibe_transcriber_resultの内容で判定:
+主にASRの内容で判定:
 
 a) 内容分析（基本スコア）:
    - ポジティブ（楽しい、できた、すごい、褒める）→ +30 to +60
    - ニュートラル（日常会話、質問と回答）→ -20 to +20
    - ネガティブ（やめて、だめ、食べないで、泣き、叱責）→ -60 to -30
 
-b) behavior_extractor_resultで補正（±10まで）:
+b) SEDで補正（±10まで）:
    - Laughter検出 → +10
    - Crying検出 → -10
    - その他の活動音 → ±5
 
-**重要**: emotion_extractor_resultはvibe_score計算に使用しない
+**重要**: SER（感情分析）はvibe_score計算に使用しない
 
 **Step 3: Extract Significant Emotions**
-Based on the emotion_extractor_result section:
+Based on the SER data in the timeline:
 - Identify the 1-2 dominant emotions from the Hume AI analysis
 - Use Japanese emotion names (e.g. 困惑, 楽しさ, 苦悩, 穏やかさ, 不安, 喜び, 怒り, 悲しみ)
 - Consider speech_prosody as primary source, vocal_burst and language as supplementary

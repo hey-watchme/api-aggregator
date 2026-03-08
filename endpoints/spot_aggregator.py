@@ -119,7 +119,8 @@ async def aggregate_spot(request: SpotAggregatorRequest):
             recorded_at=request.recorded_at,
             timezone_str=timezone_str,
             subject_info=subject_info,
-            local_time=local_time
+            local_time=local_time,
+            whisper_data=whisper_data
         )
 
         # 5. Build context data for reference (optional metadata)
