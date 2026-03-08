@@ -73,11 +73,16 @@ async def aggregate_spot(request: SpotAggregatorRequest):
             )
 
         # 2. Fetch analysis results and local_date
-        transcription = await get_whisper_data(
+        whisper_data = await get_whisper_data(
             supabase_client,
             request.device_id,
             request.recorded_at
         )
+
+        # Extract transcription text from jsonb result
+        transcription = None
+        if whisper_data and isinstance(whisper_data, dict):
+            transcription = whisper_data.get("transcription", "")
 
         behavior_data = await get_behavior_data(
             supabase_client,

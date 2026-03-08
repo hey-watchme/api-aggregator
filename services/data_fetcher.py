@@ -11,17 +11,18 @@ Key Differences from timeblock processing:
 from typing import Optional
 
 
-async def get_whisper_data(supabase_client, device_id: str, recorded_at: str) -> Optional[str]:
+async def get_whisper_data(supabase_client, device_id: str, recorded_at: str) -> Optional[dict]:
     """
-    Fetch Whisper transcription result from spot_features
+    Fetch transcription result from spot_features (jsonb column).
 
     Args:
         supabase_client: Supabase client instance
         device_id: Device ID
-        recorded_at: Timestamp in ISO 8601 format (e.g., "2025-11-10T14:30:00+09:00")
+        recorded_at: Timestamp in ISO 8601 format
 
     Returns:
-        Transcription text or None
+        dict with transcription data or None
+        Format: {"transcription": "...", "words": [...], "speaker_count": N, ...}
     """
     try:
         result = supabase_client.table('spot_features').select('vibe_transcriber_result').eq(
@@ -31,7 +32,13 @@ async def get_whisper_data(supabase_client, device_id: str, recorded_at: str) ->
         ).execute()
 
         if result.data and len(result.data) > 0:
-            return result.data[0].get('vibe_transcriber_result', '')
+            vibe_result = result.data[0].get('vibe_transcriber_result')
+            if vibe_result is None:
+                return None
+            # Handle legacy text format (pre-migration data)
+            if isinstance(vibe_result, str):
+                return {"transcription": vibe_result}
+            return vibe_result
         return None
     except Exception as e:
         print(f"Error fetching transcriber data: {e}")
