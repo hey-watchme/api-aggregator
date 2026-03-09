@@ -4,15 +4,24 @@ Prompt Generator Service
 Generate LLM analysis prompts from aggregated data with timeline synchronization
 
 Key Features:
-- Timeline-synchronized format: SED and SER data aligned by 10-second blocks
-- Technology-agnostic naming: SED (Sound Event Detection), SER (Speech Emotion Recognition)
-- Hume AI v3 support: 48-emotion prosody/burst/language analysis
+- Timeline-synchronized format: SED and SER data aligned by 5-second blocks
+- Scene Mapping: structured interpretation (participants, activity, interaction, atmosphere, uncertainty)
+- Hume AI v3 support: 48-emotion prosody/burst/language analysis (used in vibe_score)
 - Full transcription included (no timestamp segmentation)
 
 Data Flow:
 - ASR (Transcription): Full text without timestamps
-- SED (Behavior): 1-second events from behavior extractor
+- SED (Behavior): time-based events from behavior extractor (5s segments, hop 4s)
 - SER (Emotion): Hume v3 (48 emotions, utterance-based) or legacy (4 emotions, chunk-based)
+
+Output Structure:
+- scene_mapping: 5-category semantic interpretation of the recording
+- summary: narrative event description (2-3 sentences)
+- analysis: cognitive tendencies and psychological state (1-2 sentences)
+- vibe_score: emotional valence score (ASR + SED + SER combined)
+- behavior: detected behavior patterns (up to 10)
+- emotion: 1-2 dominant emotions from SER
+- rating: speech presence flag (0 or 1)
 """
 
 from datetime import datetime, time as time_type
@@ -435,44 +444,92 @@ Your task: Analyze this recording and generate a psychological analysis in JSON 
 **Required JSON structure:**
 ```json
 {
-  "summary": "この録音で観察されたことを2-3文で記述（日本語）",
+  "scene_mapping": {
+    "participants": "who is involved (e.g. parent and child likely)",
+    "core_activity": "main activity (e.g. checking homework)",
+    "behavior_detail": "interaction style (e.g. child answering briefly)",
+    "atmosphere": "mood (e.g. calm, playful, tense)",
+    "uncertainty": "unclear parts (e.g. some words inaudible)"
+  },
+  "summary": "scene_mapping to narrative description of events in 2-3 sentences",
+  "analysis": "cognitive tendencies and psychological state based on the scene",
   "vibe_score": -36,
-  "behavior": "検出された主要な行動パターン3つ（カンマ区切り）",
-  "emotion": "最も有意な感情1-2個（カンマ区切り）",
+  "behavior": "key behavior patterns, comma-separated, up to 10",
+  "emotion": "1-2 most significant emotions, comma-separated",
   "rating": 0
 }
 ```
 
-**How to write an effective summary:**
-Your summary should be like explaining to a family member - use natural, everyday language.
+## scene_mapping (Scene Mapping)
+
+Convert sensor data into meaningful components for the family.
+All values in Japanese.
+
+| Field | Description | Example |
+|-------|-------------|---------|
+| `participants` | Who seems to be present | "parent and child likely" |
+| `core_activity` | Main activity happening | "checking numbers and order" |
+| `behavior_detail` | How participants interact | "child answering briefly while progressing" |
+| `atmosphere` | Overall mood / feel | "calm interaction" |
+| `uncertainty` | What is unclear or ambiguous | "some parts of conversation unclear" |
+
+Examples:
+- participants: "parent and child. possibly other family member in background"
+- core_activity: "YouTube viewing. discussing game content"
+- behavior_detail: "child explaining excitedly while parent responds briefly"
+- atmosphere: "relaxed and engaged"
+- uncertainty: "background noise makes some words unclear"
+
+## summary
+
+Based on scene_mapping, write a 2-3 sentence narrative describing what happened.
+Use natural, everyday Japanese - as if explaining to a family member.
 
 Focus on:
 - What was said in the conversation (specific topics, complaints, requests)
 - What activities were happening (cooking, playing, watching TV, eating)
 - Emotional atmosphere (joyful, calm, frustrated, uncomfortable)
 
-**Examples of good summaries (natural, everyday language):**
-- "夕食の準備中。ピーマンを食べてみようとしている。足の裏が痛いと訴えている。"
-- "YouTubeを見ながら笑っている。Minecraftの動画について家族に説明している。"
-- "リビングで静かに過ごしている。遠くで誰かの声が聞こえるが、会話の内容ははっきりしない。"
-- "宿題について話している。やりたくないと訴えている。母親と交渉中。"
+Good examples:
+- "YouTube viewing while laughing. Explaining Minecraft video to family. Relaxed, cheerful atmosphere."
+- "During dinner prep. Trying to eat bell peppers. Complaining about sore feet."
+- "Discussing homework. Expressing reluctance. Negotiating with mother."
+- "Quiet time in living room. Distant voices audible but conversation unclear."
+
+## analysis
+
+Write 1-2 sentences about cognitive tendencies and psychological state observed in this recording.
+Use cautious language (e.g. "tendency toward...", "appears to be...").
+
+Examples:
+- "Active curiosity about new things, approaching tasks with confidence."
+- "Slight avoidance tendency toward unpleasant tasks, but responds to encouragement."
+- "Insufficient data to determine specific cognitive patterns. Overall calm."
+
+## Other fields
+
+**behavior:**
+- Key behavior patterns detected, comma-separated, up to 10
+- Example: "conversation, meal, family_time, YouTube_viewing, laughter"
+- If conversation/speech is detected in SED data, include "conversation"
+
+**emotion:**
+- 1-2 most significant emotions in Japanese from SER data
+- Use Japanese emotion names from the Hume AI analysis (48 emotion categories available)
+- Example: "confusion, joy" or "calmness"
+
+**rating (integer, 0 or 1):**
+- **Purpose**: Determine presence of speech
+- **Criteria (must follow)**:
+  - **0**: No speech content in ASR section
+  - **1**: Any conversation/speech in ASR section
+- **Important**: Even if SED detects Speech or Child singing, if ASR has no speech content, must be 0
 
 **Important Notes:**
 - Output must be valid JSON (no trailing commas)
 - All fields are required
-- summary: 2-3 sentences in Japanese describing what happened in THIS recording
-- behavior: exactly 3 key behaviors separated by commas (例: 会話, 食事, 家族団らん)
-- emotion: 1-2 most significant emotions in Japanese from SER data (例: 困惑, 楽しさ, 穏やかさ)
-- If conversation/speech is detected in SED data, "会話" MUST be included in behavior field
-- emotion field: Use Japanese emotion names from the Hume AI analysis (48 emotion categories available)
+- All Japanese text fields (scene_mapping, summary, analysis, behavior, emotion) must be in Japanese
 - JSON comments are for documentation only - do not include in output
-
-**rating (0または1の整数):**
-- **目的**: 発話の有無を判定
-- **判定基準（必ず以下のルールに従うこと）**:
-  - **0**: ASRセクションに発話内容がない場合
-  - **1**: ASRセクションに何らかの会話・発話内容がある場合
-- **重要**: SEDにSpeechやChild singingが検出されていても、ASRに発話がなければ必ず0にすること
 """)
 
     # ==================== 3. Recording Context ====================
@@ -544,51 +601,70 @@ Focus on:
     prompt_parts.append("""
 # Analysis Process
 
-**Step 1: Create Summary**
-Based on the timeline above (ASR speech, SED acoustic events, SER emotions), describe what happened in 2-3 sentences.
+**Step 1: Scene Mapping**
+From the timeline data (ASR, SED, SER), fill in each scene_mapping field:
+1. **participants** - Who seems to be present? (ASR speaker count, voice characteristics)
+2. **core_activity** - What is the main activity? (ASR topics + SED sounds)
+3. **behavior_detail** - How are participants interacting? (ASR turn-taking patterns)
+4. **atmosphere** - What is the overall mood? (SER emotions + ASR tone + SED context)
+5. **uncertainty** - What is unclear? (low-confidence ASR, ambiguous sounds)
 
-**Priority for Summary:**
-1. **ASR** - PRIMARY SOURCE: What was said? Who was speaking?
+**Step 2: Write Summary**
+Based on scene_mapping, compose a 2-3 sentence narrative of events.
+Write as if telling a family member what happened.
+
+**Data priority:**
+1. **ASR** - PRIMARY: What was said? Who was speaking?
 2. **SED** - CONTEXT: What activities/sounds were happening?
-3. **SER** - REFERENCE: How did they seem to feel? (use cautiously)
+3. **SER** - EMOTION: How did they seem to feel?
 
-**Step 2: Determine Vibe Score**
+**Step 3: Write Analysis**
+Based on scene_mapping and summary, describe cognitive tendencies and psychological state in 1-2 sentences.
+Use cautious, professional language.
 
-**判定フロー（この順番で必ず実行）**:
+**Step 4: Determine Vibe Score**
 
-1. **まず発話の有無で分岐**:
-   - ASRセクションに発話がない → ケースAへ
-   - 発話内容がある → ケースBへ
+**Flow (execute in this order)**:
 
-**ケースA: 発話なし（-5 to +5の範囲内）**
-SEDのみで判定:
-- 静寂が多い → 0付近
-- 音楽やTV音 → +2〜3
-- 物音、生活音 → ±2
-- **最終スコア: 必ず-5 to +5の範囲内**
+1. **Branch on speech presence**:
+   - No speech in ASR → Case A
+   - Speech present → Case B
 
-**ケースB: 発話あり（-100 to +100の範囲）**
-主にASRの内容で判定:
+**Case A: No speech (-5 to +5)**
+SED only:
+- Mostly silence → near 0
+- Music or TV sounds → +2 to 3
+- Daily life sounds → +/-2
+- **Must stay within -5 to +5**
 
-a) 内容分析（基本スコア）:
-   - ポジティブ（楽しい、できた、すごい、褒める）→ +30 to +60
-   - ニュートラル（日常会話、質問と回答）→ -20 to +20
-   - ネガティブ（やめて、だめ、食べないで、泣き、叱責）→ -60 to -30
+**Case B: Speech present (-100 to +100)**
+Combine ASR content and SER emotion:
 
-b) SEDで補正（±10まで）:
-   - Laughter検出 → +10
-   - Crying検出 → -10
-   - その他の活動音 → ±5
+a) Content analysis (base score):
+   - Positive (fun, did it, amazing, praise) → +30 to +60
+   - Neutral (daily conversation, Q&A) → -20 to +20
+   - Negative (stop, no, don't eat, crying, scolding) → -60 to -30
 
-**重要**: SER（感情分析）はvibe_score計算に使用しない
+b) SED adjustment (+/-10 max):
+   - Laughter detected → +10
+   - Crying detected → -10
+   - Other activity sounds → +/-5
 
-**Step 3: Extract Significant Emotions**
-Based on the SER data in the timeline:
-- Identify the 1-2 dominant emotions from the Hume AI analysis
-- Use Japanese emotion names (e.g. 困惑, 楽しさ, 苦悩, 穏やかさ, 不安, 喜び, 怒り, 悲しみ)
+c) SER adjustment (+/-15 max):
+   - Positive emotions dominant (joy, excitement, amusement) → +5 to +15
+   - Negative emotions dominant (distress, anger, sadness) → -5 to -15
+   - Neutral/calm dominant → no adjustment
+
+**Step 5: Extract Significant Emotions**
+Based on SER data in the timeline:
+- Identify 1-2 dominant emotions from the Hume AI analysis
+- Use Japanese emotion names (e.g. confusion, joy, distress, calmness, anxiety, anger, sadness)
 - Consider speech_prosody as primary source, vocal_burst and language as supplementary
-- If no speech detected, use "中立" as default
-- Example output: "困惑, 楽しさ" or "穏やかさ"
+- If no speech detected, use "neutral" as default
+
+**Step 6: Extract Behaviors**
+From ASR and SED data, list key behavior patterns (up to 10, comma-separated).
+Include "conversation" if speech is detected.
 """)
 
     return "\n".join(prompt_parts)
