@@ -81,7 +81,7 @@
 **データ優先順位**:
 1. **ASR**: PRIMARY SOURCE - 最も信頼できる会話内容
 2. **SED**: RELIABLE CONTEXT - 会話を補完する音響イベント
-3. **SER**: REFERENCE - 精度が低いため補助的に使用
+3. **SER**: EMOTION - 感情分析（vibe_score 計算にも使用）
 
 ### 主な特徴
 
@@ -94,26 +94,72 @@
 
 ```json
 {
+  "scene_mapping": {
+    "participants": "親子の可能性が高い",
+    "core_activity": "数や順番を確認している",
+    "behavior_detail": "お子さんが短く答えながら進めている",
+    "atmosphere": "落ち着いてやり取りしている",
+    "uncertainty": "会話内容は一部不明瞭"
+  },
   "summary": "この録音で観察されたことを2-3文で記述（日本語）",
+  "analysis": "認知傾向・心理状態の解釈（1-2文）",
   "vibe_score": 45,
-  "behavior": "会話, 食事, 家族団らん"
+  "behavior": "会話, 宿題, 親子やり取り",
+  "emotion": "穏やかさ, 集中",
+  "rating": 1
 }
 ```
 
+**フィールド説明**:
+
+| フィールド | 説明 | 保存先 |
+|-----------|------|--------|
+| `scene_mapping` | 5カテゴリのシーン解釈 | `spot_results.profile_result` (JSONB内) |
+| `summary` | 出来事の記述（2-3文） | `spot_results.summary` (専用カラム) |
+| `analysis` | 認知傾向・心理状態（1-2文） | `spot_results.profile_result` (JSONB内) |
+| `vibe_score` | 感情スコア（-100〜+100） | `spot_results.vibe_score` (専用カラム) |
+| `behavior` | 行動パターン（最大10個） | `spot_results.behavior` (専用カラム) |
+| `emotion` | 有意な感情（1-2個） | `spot_results.emotion` (専用カラム) |
+| `rating` | 発話有無フラグ（0/1） | `spot_results.rating` (専用カラム) |
+
+### Scene Mapping（シーンマッピング）
+
+センサーデータを家族にとって意味のある構成要素に変換するテンプレート。
+
+| カテゴリ | 説明 | 例 |
+|---------|------|-----|
+| `participants` | 参加者 | 「親子の可能性が高い」 |
+| `core_activity` | 活動 | 「数や順番を確認している可能性」 |
+| `behavior_detail` | やり取り | 「お子さんが短く答えながら進めている」 |
+| `atmosphere` | 雰囲気 | 「落ち着いてやり取りしている」 |
+| `uncertainty` | 不確実性 | 「会話内容は一部不明瞭」 |
+
+### 分析プロセス（6ステップ）
+
+| Step | 内容 |
+|------|------|
+| Step 1 | **Scene Mapping** — ASR/SED/SER から5カテゴリに変換 |
+| Step 2 | **Summary** — scene_mapping から出来事を文章化（2-3文） |
+| Step 3 | **Analysis** — 認知傾向・心理状態の解釈（1-2文） |
+| Step 4 | **Vibe Score** — ASR + SED + SER で算出 |
+| Step 5 | **Emotion** — SER から主要感情1-2個抽出 |
+| Step 6 | **Behavior** — 行動パターン抽出（最大10個） |
+
 ### Vibe Score計算方式
 
-**Summary-Based Scoring（Summaryから逆算）**:
-1. Summaryの内容を読んで基礎スコア決定（-60〜+60）
-2. 時間帯・会話エンゲージメントで補正（-20〜+20）
-3. SER（感情スコア）で段階的調整（-15〜+15）
-   - Strong signals (≥4.0): 必ず参考（±10〜±15）
-   - Moderate signals (2.0-4.0): Summaryと一致すれば使用（±5〜±10）
-   - Weak signals (<2.0): 無視
+**判定フロー（この順番で実行）**:
 
-**特別処理**:
-- "発話なし" + SED Speech検出 = 会話はあったが内容不明と解釈
-- Base +5〜+10に設定（完全な沈黙ではない）
-- SERが強ければ追加ボーナス
+1. **発話の有無で分岐**:
+   - ASRに発話なし → ケースA
+   - 発話あり → ケースB
+
+**ケースA: 発話なし（-5 to +5）**
+- SEDのみで判定（静寂→0付近、音楽→+2〜3、生活音→±2）
+
+**ケースB: 発話あり（-100 to +100）**
+- a) ASR内容分析（基本スコア）: ポジティブ +30〜+60 / ニュートラル -20〜+20 / ネガティブ -60〜-30
+- b) SED補正（±10まで）: Laughter→+10, Crying→-10, その他→±5
+- c) SER補正（±15まで）: ポジティブ感情優勢→+5〜+15, ネガティブ感情優勢→-5〜-15
 
 **スコアレンジ**:
 - Highly Positive (40-60): 楽しい遊び、学習、褒められる
@@ -122,13 +168,6 @@
 - Negative (-40 to -20): 不満、軽い衝突、不快感
 - Highly Negative (-60 to -40): 激しい泣き、喧嘩、苦痛
 
-**計算例**:
-```
-発話なし + Speech 0.75 + Joy 4.6
-= 8 (base) + 5 (time) + 10 (speech) + 12 (joy)
-= 35
-```
-
 ### プロンプト構造例（統合タイムライン形式）
 
 ```markdown
@@ -136,7 +175,14 @@
 You are a professional counselor writing a brief session note...
 
 # Output Format
-(JSON: summary, vibe_score, behavior, emotion, rating)
+(JSON: scene_mapping, summary, analysis, vibe_score, behavior, emotion, rating)
+
+## scene_mapping structure:
+- participants: who is present
+- core_activity: what is happening
+- behavior_detail: how they are interacting
+- atmosphere: emotional tone
+- uncertainty: data limitations
 
 # Recording Context
 Duration: 60 seconds / Date: 2026-03-08 / Local Time: 21:30 (夜)
@@ -164,7 +210,12 @@ Duration: 60 seconds / Date: 2026-03-08 / Local Time: 21:30 (夜)
   Top 5: 熱意(0.45), 興奮(0.38), 関心(0.18), 満足感(0.16), 喜び(0.15)
 
 # Analysis Process
-(Step 1: Summary, Step 2: Vibe Score, Step 3: Emotions)
+Step 1: Scene Mapping (5 categories)
+Step 2: Summary (2-3 sentences from scene_mapping)
+Step 3: Analysis (cognitive/psychological interpretation)
+Step 4: Vibe Score (ASR + SED + SER → score)
+Step 5: Emotion (dominant emotions from SER)
+Step 6: Behavior (up to 10 patterns)
 ```
 
 ### 統合タイムラインの効果
@@ -267,11 +318,11 @@ POST /aggregator/spot
 ```
 
 **プロンプト内容** (aggregated_prompt):
-- Task Definition & Output Format: ~2500文字
+- Task Definition & Output Format（Scene Mapping + Analysis含む）: ~3000文字
 - Recording Context: ~200文字
 - Unified Analysis Timeline（5秒ブロック × 最大12-17ブロック）: ~1500文字
-- Analysis Guidelines: ~500文字
-- **合計**: ~4500文字
+- Analysis Process（6ステップ）: ~800文字
+- **合計**: ~5500文字
 
 ---
 
@@ -600,5 +651,5 @@ CREATE TABLE weekly_aggregators (
 
 ---
 
-**最終更新**: 2026-03-08
+**最終更新**: 2026-03-09
 **ステータス**: ✅ 本番稼働中（Spot + Daily）、試験段階（Weekly）
