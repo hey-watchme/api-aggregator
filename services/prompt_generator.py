@@ -6,7 +6,7 @@ Generate LLM analysis prompts from aggregated data with timeline synchronization
 Key Features:
 - Timeline-synchronized format: SED and SER data aligned by 5-second blocks
 - Scene Mapping: structured interpretation (participants, activity, interaction, atmosphere, uncertainty)
-- Hume AI v3 support: 48-emotion prosody/burst/language analysis (used in vibe_score)
+- Hume AI v3 support: 48-emotion prosody/burst analysis (used in vibe_score)
 - Full transcription included (no timestamp segmentation)
 
 Data Flow:
@@ -104,101 +104,12 @@ def _emotion_ja(name: str) -> str:
     return HUME_EMOTION_JA.get(name, name)
 
 
-def _format_top_emotions(emotions_dict: Dict[str, float], n: int = 3) -> str:
-    """Format top N emotions as 'JA名(score)' string"""
-    top = _top_emotions(emotions_dict, n)
-    return ", ".join(f"{_emotion_ja(name)}({score:.2f})" for name, score in top)
-
-
-def _format_hume_emotion_section(emotion_data: Dict[str, Any], skip_emotion: bool) -> str:
-    """
-    Format Hume v3 emotion data as a prompt section.
-    Returns a string with speech prosody, vocal burst, and language analysis.
-    """
-    if skip_emotion:
-        return "\n# emotion_extractor_result\n\nNo speech detected - emotion data not applicable\n"
-
-    parts = []
-    parts.append("\n# emotion_extractor_result (Hume AI - 48 Emotion Analysis)\n")
-
-    # --- Speech Prosody ---
-    prosody = emotion_data.get("speech_prosody", {})
-    prosody_segments = prosody.get("segments", [])
-
-    if prosody_segments:
-        parts.append("## Voice Tone Emotion (speech_prosody)")
-        for seg in prosody_segments:
-            time_info = seg.get("time", {})
-            begin = time_info.get("begin", 0)
-            end = time_info.get("end", 0)
-            text = seg.get("text", "")
-            emotions = seg.get("emotions", {})
-            dominant = seg.get("dominant_emotion", {})
-
-            text_preview = text[:30] + "..." if len(text) > 30 else text
-            top_str = _format_top_emotions(emotions, 3)
-            dominant_ja = _emotion_ja(dominant.get("name", ""))
-
-            parts.append(
-                f"[{begin:.1f}-{end:.1f}s] \"{text_preview}\"  "
-                f"Dominant: {dominant_ja}({dominant.get('score', 0):.2f})  "
-                f"Top: {top_str}"
-            )
-        parts.append("")
-
-    # --- Vocal Burst ---
-    burst = emotion_data.get("vocal_burst", {})
-    burst_segments = burst.get("segments", [])
-
-    if burst_segments:
-        parts.append("## Non-speech Vocal Emotion (vocal_burst)")
-        for seg in burst_segments:
-            time_info = seg.get("time", {})
-            begin = time_info.get("begin", 0)
-            end = time_info.get("end", 0)
-            emotions = seg.get("emotions", {})
-            dominant = seg.get("dominant_emotion", {})
-
-            top_str = _format_top_emotions(emotions, 3)
-            dominant_ja = _emotion_ja(dominant.get("name", ""))
-
-            parts.append(
-                f"[{begin:.1f}-{end:.1f}s]  "
-                f"Dominant: {dominant_ja}({dominant.get('score', 0):.2f})  "
-                f"Top: {top_str}"
-            )
-        parts.append("")
-
-    # --- Language ---
-    language = emotion_data.get("language", {})
-    lang_segments = language.get("segments", [])
-
-    if lang_segments:
-        parts.append("## Text-based Emotion (language)")
-        for seg in lang_segments:
-            emotions = seg.get("emotions", {})
-            dominant = seg.get("dominant_emotion", {})
-
-            top_str = _format_top_emotions(emotions, 5)
-            dominant_ja = _emotion_ja(dominant.get("name", ""))
-
-            parts.append(
-                f"Dominant: {dominant_ja}({dominant.get('score', 0):.2f})  "
-                f"Top: {top_str}"
-            )
-        parts.append("")
-
-    if not prosody_segments and not burst_segments and not lang_segments:
-        parts.append("(No emotion segments detected)")
-
-    return "\n".join(parts)
-
-
 def _build_unified_timeline(
     whisper_data: Optional[Dict],
     behavior_data: Optional[list],
     emotion_data: Optional[Union[list, Dict]],
-    block_seconds: int = 5
+    block_seconds: int = 5,
+    transcription: Optional[str] = None
 ) -> str:
     """
     Build a unified timeline combining ASR, SED, and SER data
@@ -232,6 +143,12 @@ def _build_unified_timeline(
     num_blocks = int(max_time // block_seconds) + 1
     parts = []
     parts.append(f"\n# Unified Analysis Timeline ({block_seconds}s blocks)\n")
+
+    if not has_words:
+        if transcription and transcription.strip() and transcription.strip() != "(No speech detected or transcription failed)":
+            parts.append(f'ASR (time unknown): "{transcription.strip()}"\n')
+        else:
+            parts.append("ASR: (発話なし)\n")
 
     for b in range(num_blocks):
         t_start = b * block_seconds
@@ -276,9 +193,11 @@ def _build_unified_timeline(
                             block_events[label] = score
 
             if block_events:
-                sorted_ev = sorted(block_events.items(), key=lambda x: x[1], reverse=True)[:3]
-                ev_str = ", ".join(f"{l}({s*100:.0f}%)" for l, s in sorted_ev)
-                block_parts.append(f"  SED: {ev_str}")
+                filtered_ev = {l: s for l, s in block_events.items() if s >= 0.20}
+                if filtered_ev:
+                    sorted_ev = sorted(filtered_ev.items(), key=lambda x: x[1], reverse=True)
+                    ev_str = ", ".join(f"{l}({s*100:.0f}%)" for l, s in sorted_ev)
+                    block_parts.append(f"  SED: {ev_str}")
 
         # --- SER: emotion segments overlapping this block ---
         if hume_mode:
@@ -311,6 +230,18 @@ def _build_unified_timeline(
                     block_parts.append(
                         f"  SER(burst) [{seg_begin:.1f}-{seg_end:.1f}s]: "
                         f"{d_name}({d_score:.2f})"
+                    )
+        elif isinstance(emotion_data, list):
+            # Legacy format support (list of chunks)
+            for chunk in emotion_data:
+                seg_begin = chunk.get("start_time", 0)
+                seg_end = chunk.get("end_time", 0)
+                if seg_begin < t_end and seg_end > t_start:
+                    primary = chunk.get("primary_emotion", {})
+                    d_name = primary.get("name_ja", primary.get("label", "Unknown"))
+                    d_score = primary.get("score", 0)
+                    block_parts.append(
+                        f"  SER [{seg_begin:.1f}-{seg_end:.1f}s]: {d_name}({d_score:.2f})"
                     )
 
         if block_parts:
@@ -510,13 +441,15 @@ Examples:
 
 **behavior:**
 - Key behavior patterns detected, comma-separated, up to 10
-- Example: "conversation, meal, family_time, YouTube_viewing, laughter"
-- If conversation/speech is detected in SED data, include "conversation"
+- Example: "会話, 食事, 家族時間, YouTube視聴, 笑い"
+- If conversation/speech is detected in SED data, include "会話"
+- If clear non-speech events are detected (e.g., Whistling, Finger snapping), include them as Japanese labels
+- SED labels are in English; translate to simple Japanese (e.g., Whistling→口笛, Finger snapping→指を鳴らす)
 
 **emotion:**
 - 1-2 most significant emotions in Japanese from SER data
 - Use Japanese emotion names from the Hume AI analysis (48 emotion categories available)
-- Example: "confusion, joy" or "calmness"
+- Example: "困惑, 喜び" or "穏やかさ"
 
 **rating (integer, 0 or 1):**
 - **Purpose**: Determine presence of speech
@@ -559,43 +492,16 @@ Examples:
     has_words = (whisper_data and isinstance(whisper_data, dict)
                  and whisper_data.get("words"))
 
-    if has_words:
-        # New format: unified 5s timeline with ASR + SED + SER
-        prompt_parts.append(
-            _build_unified_timeline(whisper_data, behavior_data, emotion_data, block_seconds=5)
+    # Unified timeline always (ASR/SED/SER aligned to 5s blocks)
+    prompt_parts.append(
+        _build_unified_timeline(
+            whisper_data,
+            behavior_data,
+            emotion_data,
+            block_seconds=5,
+            transcription=transcription
         )
-    else:
-        # Legacy fallback: separate sections for old data without word timestamps
-        prompt_parts.append("\n# vibe_transcriber_result\n")
-        if transcription and transcription.strip():
-            prompt_parts.append(f"{transcription}\n")
-        else:
-            prompt_parts.append("(No speech detected or transcription failed)\n")
-
-        prompt_parts.append("\n# behavior_extractor_result Timeline\n")
-        if not has_behavior:
-            prompt_parts.append("(No behavior data available)\n")
-        else:
-            for entry in behavior_data:
-                t = entry.get("time", 0)
-                events = entry.get("events", [])
-                if events:
-                    sorted_events = sorted(events, key=lambda x: x.get("score", 0), reverse=True)[:3]
-                    prompt_parts.append(f"## {t}s")
-                    for ev in sorted_events:
-                        label = ev.get("label", "Unknown")
-                        score = ev.get("score", 0) * 100
-                        prompt_parts.append(f"  - {label}: {score:.0f}%")
-                    prompt_parts.append("")
-
-        if has_emotion and hume_mode:
-            skip_emotion = (
-                not transcription or not transcription.strip()
-                or transcription.strip() in ["(No speech detected or transcription failed)", ""]
-            )
-            prompt_parts.append(_format_hume_emotion_section(emotion_data, skip_emotion))
-        elif not has_emotion:
-            prompt_parts.append("\n# emotion_extractor_result\n\n(No emotion data available)\n")
+    )
 
     # ==================== 5. Analysis Guidelines ====================
     prompt_parts.append("""
@@ -608,6 +514,8 @@ From the timeline data (ASR, SED, SER), fill in each scene_mapping field:
 3. **behavior_detail** - How are participants interacting? (ASR turn-taking patterns)
 4. **atmosphere** - What is the overall mood? (SER emotions + ASR tone + SED context)
 5. **uncertainty** - What is unclear? (low-confidence ASR, ambiguous sounds)
+   - Treat high-confidence non-speech SED events (score >= 0.20) as factual clues.
+   - If a sound label seems unreliable (e.g., Owl/Hoot), mention it in uncertainty rather than asserting it.
 
 **Step 2: Write Summary**
 Based on scene_mapping, compose a 2-3 sentence narrative of events.
@@ -651,9 +559,9 @@ b) SED adjustment (+/-10 max):
    - Other activity sounds → +/-5
 
 c) SER adjustment (+/-15 max):
-   - Positive emotions dominant (joy, excitement, amusement) → +5 to +15
-   - Negative emotions dominant (distress, anger, sadness) → -5 to -15
-   - Neutral/calm dominant → no adjustment
+   - Positive emotions dominant (Joy, Excitement, Amusement, Gratitude, Relief, Triumph) → +5 to +15
+   - Negative emotions dominant (Distress, Anger, Sadness, Anxiety, Disgust, Contempt) → -5 to -15
+   - Neutral/calm dominant (Calmness, Concentration, Determination) → no adjustment
 
 **Step 5: Extract Significant Emotions**
 Based on SER data in the timeline:
@@ -664,7 +572,8 @@ Based on SER data in the timeline:
 
 **Step 6: Extract Behaviors**
 From ASR and SED data, list key behavior patterns (up to 10, comma-separated).
-Include "conversation" if speech is detected.
+Include "会話" if speech is detected.
+Include clear non-speech SED events (score >= 0.20) in Japanese (e.g., 口笛, 指を鳴らす).
 """)
 
     return "\n".join(prompt_parts)
