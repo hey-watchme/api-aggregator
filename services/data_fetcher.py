@@ -78,14 +78,16 @@ async def get_behavior_data(supabase_client, device_id: str, recorded_at: str) -
 
 async def get_emotion_data(supabase_client, device_id: str, recorded_at: str):
     """
-    Fetch Hume v3 emotion analysis result from spot_features.
+    Fetch emotion analysis result from spot_features.
+    Prioritizes Hume v3 format, falls back to legacy extractor result.
 
     Returns:
-        dict (Hume v3 format with provider="hume") or None
+        dict (Hume v3 format) or list (legacy format) or None
     """
     try:
+        # Fetch both columns to handle fallback
         result = supabase_client.table('spot_features').select(
-            'emotion_features_result_hume'
+            'emotion_features_result_hume, emotion_extractor_result'
         ).eq(
             'device_id', device_id
         ).eq(
@@ -93,9 +95,17 @@ async def get_emotion_data(supabase_client, device_id: str, recorded_at: str):
         ).execute()
 
         if result.data and len(result.data) > 0:
-            hume_result = result.data[0].get('emotion_features_result_hume')
+            data = result.data[0]
+            
+            # 1. Try Hume v3 (JSONB object)
+            hume_result = data.get('emotion_features_result_hume')
             if hume_result and isinstance(hume_result, dict):
                 return hume_result
+                
+            # 2. Try legacy (JSONB array)
+            legacy_result = data.get('emotion_extractor_result')
+            if legacy_result and isinstance(legacy_result, list):
+                return legacy_result
 
         return None
     except Exception as e:

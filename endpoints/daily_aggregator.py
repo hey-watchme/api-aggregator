@@ -93,12 +93,14 @@ Analyze the following {len(spot_results)} spot recordings from {local_date} and 
    - event: contextual insight in Japanese (why the change happened)
    - score_change: magnitude of change
 4. Generate a concise daily summary in Japanese (2-3 sentences)
+5. Generate a one-line headline in Japanese (short, status-like, ~6-14 characters)
 
 ## Output Format (JSON)
 Return ONLY a valid JSON object:
 ```json
 {{
   "summary": "Japanese summary in 2-3 sentences describing the overall day",
+  "headline": "Short Japanese headline (one line, status-like, ~6-14 chars)",
   "burst_events": [
     {{
       "time": "HH:MM",
